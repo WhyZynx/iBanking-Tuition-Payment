@@ -1,15 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="vi">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>iBanking User & Account</title>
+	<title>iBanking – Đóng học phí trực tuyến</title>
 	<style>
 		:root { color-scheme: light; font-family: Arial, sans-serif; color: #17324d; background: #eef4f8; }
 		body { margin: 0; min-height: 100vh; }
-		main { width: min(900px, calc(100% - 32px)); margin: 40px auto; }
-		.panel { background: white; border: 1px solid #d6e1e8; border-radius: 8px; padding: 24px; box-shadow: 0 8px 24px #17324d12; }
+		header { background: white; border-bottom: 1px solid #d6e1e8; }
+		nav { width: min(1040px, calc(100% - 32px)); min-height: 64px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+		.brand { color: #087f8c; font-size: 20px; font-weight: 700; text-decoration: none; }
+		.nav-links { display: flex; align-items: center; gap: 10px; }
+		.nav-links a { color: #17324d; text-decoration: none; padding: 9px 12px; border-radius: 5px; }
+		.nav-links a:hover { background: #eef4f8; }
+		.nav-links .nav-login { color: white; background: #087f8c; font-weight: 700; }
+		main { width: min(1040px, calc(100% - 32px)); margin: 36px auto; }
+		.panel { background: white; border: 1px solid #d6e1e8; border-radius: 10px; padding: 28px; box-shadow: 0 8px 24px #17324d12; }
 		h1, h2 { margin-top: 0; }
+		.hero { padding: 48px; }
+		.hero h1 { font-size: clamp(32px, 5vw, 48px); margin-bottom: 14px; }
+		.hero-copy { max-width: 600px; color: #547080; font-size: 18px; line-height: 1.6; }
+		.button { display: inline-block; border: 0; color: white; background: #087f8c; cursor: pointer; font: inherit; font-weight: 700; text-decoration: none; padding: 12px 18px; border-radius: 5px; }
+		.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-top: 22px; }
+		.feature { background: #f4f8fa; padding: 18px; border-radius: 7px; }
+		.feature p { color: #547080; margin-bottom: 0; line-height: 1.5; }
 		form { display: grid; gap: 12px; max-width: 360px; }
 		label { font-weight: 600; }
 		input, button { box-sizing: border-box; width: 100%; padding: 11px 12px; font: inherit; border-radius: 5px; border: 1px solid #a9bac7; }
@@ -21,29 +35,61 @@
 		.profile div, .account { background: #f4f8fa; padding: 14px; border-radius: 5px; }
 		.accounts { display: grid; gap: 10px; }
 		.account { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+		.section-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 		.hidden { display: none; }
+		@media (max-width: 560px) {
+			nav { align-items: flex-start; flex-direction: column; padding: 14px 0; }
+			.nav-links { flex-wrap: wrap; }
+			.nav-links a { padding: 8px; }
+			.hero { padding: 28px 22px; }
+			.panel { padding: 22px; }
+		}
 	</style>
 </head>
 <body>
+	<header>
+		<nav aria-label="Điều hướng chính">
+			<a class="brand" href="#home" data-view="home">iBanking</a>
+			<div class="nav-links">
+				<a href="#home" data-view="home">Trang chủ</a>
+				<a id="dashboard-link" class="hidden" href="#dashboard" data-view="dashboard">Tổng quan</a>
+				<a id="login-link" class="nav-login" href="#login" data-view="login">Đăng nhập</a>
+			</div>
+		</nav>
+	</header>
 	<main>
-		<section id="login-panel" class="panel">
-			<h1>iBanking</h1>
-			<p class="muted">User & Account Service</p>
+		<section id="home-panel" class="panel hero">
+			<h1>Đóng học phí trực tuyến</h1>
+			<p class="hero-copy">Tra cứu và thanh toán học phí một cách thuận tiện với iBanking.</p>
+			<a class="button" href="#login" data-view="login">Đăng nhập</a>
+			<div class="features" aria-label="Các tiện ích">
+				<article class="feature"><strong>Tra cứu học phí</strong><p>Tìm thông tin học phí theo mã sinh viên.</p></article>
+				<article class="feature"><strong>Thanh toán</strong><p>Chuẩn bị thanh toán học phí trực tuyến.</p></article>
+				<article class="feature"><strong>Quản lý tài khoản</strong><p>Xem thông tin cá nhân và số dư tài khoản.</p></article>
+				<article class="feature"><strong>Lịch sử giao dịch</strong><p>Theo dõi các giao dịch thanh toán khi dịch vụ được kết nối.</p></article>
+			</div>
+		</section>
+
+		<section id="login-panel" class="panel hidden">
+			<h1>Đăng nhập iBanking</h1>
+			<p class="muted">Sử dụng tài khoản được cấp để tiếp tục.</p>
 			<form id="login-form">
-				<label for="username">Username</label>
+				<label for="username">Tên đăng nhập</label>
 				<input id="username" name="username" autocomplete="username" required>
-				<label for="password">Password</label>
+				<label for="password">Mật khẩu</label>
 				<input id="password" name="password" type="password" autocomplete="current-password" required>
-				<button type="submit">Login</button>
+				<button type="submit">Đăng nhập</button>
 				<p id="login-error" class="error" role="alert"></p>
 			</form>
 		</section>
 
 		<section id="dashboard" class="panel hidden">
-			<button id="logout" class="secondary" type="button">Logout</button>
-			<h1 id="welcome">Profile</h1>
+			<div class="section-heading">
+				<h1 id="welcome">Tổng quan</h1>
+				<button id="logout" class="secondary" type="button">Đăng xuất</button>
+			</div>
 			<div id="profile" class="profile"></div>
-			<h2>My Accounts</h2>
+			<h2>Tài khoản của tôi</h2>
 			<div id="accounts" class="accounts"></div>
 			<p id="dashboard-error" class="error" role="alert"></p>
 		</section>
@@ -51,41 +97,79 @@
 	<script>
 		const API_BASE_URL = 'http://localhost:8001';
 		const tokenKey = 'ibanking_access_token';
+		const homePanel = document.getElementById('home-panel');
 		const loginPanel = document.getElementById('login-panel');
 		const dashboard = document.getElementById('dashboard');
 		const loginError = document.getElementById('login-error');
 		const dashboardError = document.getElementById('dashboard-error');
+		const dashboardLink = document.getElementById('dashboard-link');
+		const loginLink = document.getElementById('login-link');
 
 		async function apiRequest(path, options = {}) {
 			const token = sessionStorage.getItem(tokenKey);
 			const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
 			if (token) headers.Authorization = `Bearer ${token}`;
 			const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-			if (!response.ok) throw new Error((await response.json()).detail || 'Request failed');
+			if (!response.ok) throw new Error((await response.json()).detail || 'Yêu cầu không thành công');
 			return response.json();
 		}
 
+		function showView(view) {
+			homePanel.classList.toggle('hidden', view !== 'home');
+			loginPanel.classList.toggle('hidden', view !== 'login');
+			dashboard.classList.toggle('hidden', view !== 'dashboard');
+		}
+
+		function updateNavigation() {
+			const isAuthenticated = Boolean(sessionStorage.getItem(tokenKey));
+			dashboardLink.classList.toggle('hidden', !isAuthenticated);
+			loginLink.classList.toggle('hidden', isAuthenticated);
+		}
+
 		function renderProfile(user) {
-			document.getElementById('welcome').textContent = `Welcome, ${user.fullName}`;
+			document.getElementById('welcome').textContent = `Xin chào, ${user.fullName}`;
 			document.getElementById('profile').innerHTML = [
-				['Full name', user.fullName], ['Username', user.username],
-				['Phone', user.phone], ['Email', user.email]
+				['Họ và tên', user.fullName], ['Tên đăng nhập', user.username],
+				['Điện thoại', user.phone], ['Email', user.email]
 			].map(([label, value]) => `<div><strong>${label}</strong><br>${value}</div>`).join('');
 		}
 
 		function renderAccounts(accounts) {
 			document.getElementById('accounts').innerHTML = accounts.map(account =>
-				`<div class="account"><span><strong>${account.accountNumber}</strong><br>${account.status}${account.isDefault ? ' · Default' : ''}</span><strong>${Number(account.balance).toLocaleString()} VND</strong></div>`
-			).join('') || '<p class="muted">No accounts found.</p>';
+				`<div class="account"><span><strong>${account.accountNumber}</strong><br>${account.status}${account.isDefault ? ' · Mặc định' : ''}</span><strong>${Number(account.balance).toLocaleString('vi-VN')} VNĐ</strong></div>`
+			).join('') || '<p class="muted">Chưa có tài khoản.</p>';
 		}
 
 		async function loadDashboard() {
 			const [user, accounts] = await Promise.all([apiRequest('/api/v1/users/me'), apiRequest('/api/v1/accounts/me')]);
 			renderProfile(user);
 			renderAccounts(accounts);
-			loginPanel.classList.add('hidden');
-			dashboard.classList.remove('hidden');
+			updateNavigation();
+			showView('dashboard');
 		}
+
+		async function navigate(view) {
+			if (view === 'dashboard') {
+				if (!sessionStorage.getItem(tokenKey)) return showView('login');
+				try {
+					await loadDashboard();
+				} catch (error) {
+					dashboardError.textContent = error.message;
+					sessionStorage.removeItem(tokenKey);
+					updateNavigation();
+					showView('login');
+				}
+				return;
+			}
+			showView(view);
+		}
+
+		document.querySelectorAll('[data-view]').forEach(link => link.addEventListener('click', event => {
+			event.preventDefault();
+			const view = event.currentTarget.dataset.view;
+			history.replaceState(null, '', `#${view}`);
+			navigate(view);
+		}));
 
 		document.getElementById('login-form').addEventListener('submit', async event => {
 			event.preventDefault();
@@ -95,19 +179,30 @@
 				const result = await apiRequest('/api/v1/auth/login', { method: 'POST', body: JSON.stringify(body) });
 				sessionStorage.setItem(tokenKey, result.access_token);
 				await loadDashboard();
+				history.replaceState(null, '', '#dashboard');
 			} catch (error) { loginError.textContent = error.message; }
 		});
 
 		document.getElementById('logout').addEventListener('click', () => {
 			sessionStorage.removeItem(tokenKey);
-			dashboard.classList.add('hidden');
-			loginPanel.classList.remove('hidden');
+			updateNavigation();
+			showView('home');
+			history.replaceState(null, '', '#home');
 		});
 
-		if (sessionStorage.getItem(tokenKey)) loadDashboard().catch(error => {
-			sessionStorage.removeItem(tokenKey);
-			dashboardError.textContent = error.message;
-		});
+		updateNavigation();
+		if (sessionStorage.getItem(tokenKey)) {
+			loadDashboard().catch(error => {
+				sessionStorage.removeItem(tokenKey);
+				dashboardError.textContent = error.message;
+				updateNavigation();
+				showView('login');
+			});
+		} else if (location.hash === '#login') {
+			showView('login');
+		} else {
+			showView('home');
+		}
 	</script>
 </body>
 </html>

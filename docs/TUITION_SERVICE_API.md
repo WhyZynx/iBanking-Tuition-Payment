@@ -169,7 +169,7 @@ mysql -u root -p < db/tuition.sql
 Run the Tuition Service:
 
 ```bash
-python -m uvicorn backend.controllers.tuition_controller:app --host 0.0.0.0 --port 8002
+python -m uvicorn backend.controllers.tuition_controller:app --reload --port 8002
 ```
 
 Swagger is available at:

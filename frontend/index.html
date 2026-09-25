@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>iBanking User & Account</title>
+	<style>
+		:root { color-scheme: light; font-family: Arial, sans-serif; color: #17324d; background: #eef4f8; }
+		body { margin: 0; min-height: 100vh; }
+		main { width: min(900px, calc(100% - 32px)); margin: 40px auto; }
+		.panel { background: white; border: 1px solid #d6e1e8; border-radius: 8px; padding: 24px; box-shadow: 0 8px 24px #17324d12; }
+		h1, h2 { margin-top: 0; }
+		form { display: grid; gap: 12px; max-width: 360px; }
+		label { font-weight: 600; }
+		input, button { box-sizing: border-box; width: 100%; padding: 11px 12px; font: inherit; border-radius: 5px; border: 1px solid #a9bac7; }
+		button { border: 0; color: white; background: #087f8c; cursor: pointer; font-weight: 700; }
+		button.secondary { width: auto; background: #547080; padding: 9px 16px; }
+		.error { color: #b42318; min-height: 20px; }
+		.muted { color: #547080; }
+		.profile { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+		.profile div, .account { background: #f4f8fa; padding: 14px; border-radius: 5px; }
+		.accounts { display: grid; gap: 10px; }
+		.account { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+		.hidden { display: none; }
+	</style>
+</head>
+<body>
+	<main>
+		<section id="login-panel" class="panel">
+			<h1>iBanking</h1>
+			<p class="muted">User & Account Service</p>
+			<form id="login-form">
+				<label for="username">Username</label>
+				<input id="username" name="username" autocomplete="username" required>
+				<label for="password">Password</label>
+				<input id="password" name="password" type="password" autocomplete="current-password" required>
+				<button type="submit">Login</button>
+				<p id="login-error" class="error" role="alert"></p>
+			</form>
+		</section>
+
+		<section id="dashboard" class="panel hidden">
+			<button id="logout" class="secondary" type="button">Logout</button>
+			<h1 id="welcome">Profile</h1>
+			<div id="profile" class="profile"></div>
+			<h2>My Accounts</h2>
+			<div id="accounts" class="accounts"></div>
+			<p id="dashboard-error" class="error" role="alert"></p>
+		</section>
+	</main>
+	<script>
+		const API_BASE_URL = 'http://localhost:8001';
+		const tokenKey = 'ibanking_access_token';
+		const loginPanel = document.getElementById('login-panel');
+		const dashboard = document.getElementById('dashboard');
+		const loginError = document.getElementById('login-error');
+		const dashboardError = document.getElementById('dashboard-error');
+
+		async function apiRequest(path, options = {}) {
+			const token = sessionStorage.getItem(tokenKey);
+			const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+			if (token) headers.Authorization = `Bearer ${token}`;
+			const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+			if (!response.ok) throw new Error((await response.json()).detail || 'Request failed');
+			return response.json();
+		}
+
+		function renderProfile(user) {
+			document.getElementById('welcome').textContent = `Welcome, ${user.fullName}`;
+			document.getElementById('profile').innerHTML = [
+				['Full name', user.fullName], ['Username', user.username],
+				['Phone', user.phone], ['Email', user.email]
+			].map(([label, value]) => `<div><strong>${label}</strong><br>${value}</div>`).join('');
+		}
+
+		function renderAccounts(accounts) {
+			document.getElementById('accounts').innerHTML = accounts.map(account =>
+				`<div class="account"><span><strong>${account.accountNumber}</strong><br>${account.status}${account.isDefault ? ' · Default' : ''}</span><strong>${Number(account.balance).toLocaleString()} VND</strong></div>`
+			).join('') || '<p class="muted">No accounts found.</p>';
+		}
+
+		async function loadDashboard() {
+			const [user, accounts] = await Promise.all([apiRequest('/api/v1/users/me'), apiRequest('/api/v1/accounts/me')]);
+			renderProfile(user);
+			renderAccounts(accounts);
+			loginPanel.classList.add('hidden');
+			dashboard.classList.remove('hidden');
+		}
+
+		document.getElementById('login-form').addEventListener('submit', async event => {
+			event.preventDefault();
+			loginError.textContent = '';
+			try {
+				const body = { username: event.target.username.value, password: event.target.password.value };
+				const result = await apiRequest('/api/v1/auth/login', { method: 'POST', body: JSON.stringify(body) });
+				sessionStorage.setItem(tokenKey, result.access_token);
+				await loadDashboard();
+			} catch (error) { loginError.textContent = error.message; }
+		});
+
+		document.getElementById('logout').addEventListener('click', () => {
+			sessionStorage.removeItem(tokenKey);
+			dashboard.classList.add('hidden');
+			loginPanel.classList.remove('hidden');
+		});
+
+		if (sessionStorage.getItem(tokenKey)) loadDashboard().catch(error => {
+			sessionStorage.removeItem(tokenKey);
+			dashboardError.textContent = error.message;
+		});
+	</script>
+</body>
+</html>

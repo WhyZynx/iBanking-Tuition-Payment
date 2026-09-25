@@ -2,11 +2,9 @@
 
 ## Responsibility
 
-Student 2 owns tuition lookup and tuition payment status management.
+The Tuition Service manages student tuition information, tuition lookup, and tuition payment status.
 
-The Tuition Service stores student tuition information and provides internal APIs for the Payment Service to retrieve tuition details and mark tuition as paid.
-
-Authentication, account balances, payment workflow, OTP, notifications, and transaction history remain owned by other services.
+Authentication, account balances, payment processing, OTP verification, notifications, and transaction history remain handled by other services.
 
 ## Run Configuration
 
@@ -14,8 +12,32 @@ Authentication, account balances, payment workflow, OTP, notifications, and tran
 - Default port: `8002`
 - Database: MySQL `ibanking_tuition`
 - Swagger: `http://localhost:8002/docs`
+- Frontend: `http://localhost:3000/pages/tuition.html`
 
-## Tuition APIs
+## APIs
+
+### `GET /api/v1/tuition`
+
+Returns all tuition records.
+
+Success `200`:
+
+```json
+[
+  {
+    "student_id": "524H0012",
+    "student_name": "Nguyen Minh Anh",
+    "amount": 18500000.00,
+    "status": "UNPAID"
+  },
+  {
+    "student_id": "524H0078",
+    "student_name": "Le Hoang Phuc",
+    "amount": 19750000.00,
+    "status": "PAID"
+  }
+]
+```
 
 ### `GET /api/v1/tuition/{student_id}`
 
@@ -39,8 +61,6 @@ Success `200`:
 ```
 
 Returns `404` if the student or tuition information does not exist.
-
-Example:
 
 ```json
 {
@@ -71,10 +91,7 @@ Success `200`:
 }
 ```
 
-Returns:
-
-- `404` if the tuition information does not exist.
-- `409` if the tuition has already been paid.
+Returns `404` if the tuition information does not exist and `409` if the tuition has already been paid.
 
 Already paid example:
 
@@ -84,9 +101,27 @@ Already paid example:
 }
 ```
 
+## Tuition Payment Interface
+
+The Tuition Payment page contains three information groups:
+
+- Payer Information
+- Tuition Information
+- Payment Information
+
+Payer information is automatically loaded from the authenticated user's account and is read-only.
+
+The user enters a Student ID to retrieve the student's name, tuition amount, and payment status.
+
+The payment amount is always the full tuition amount. Partial payment is not supported.
+
+The Confirm Transaction button is enabled only when the tuition is unpaid, the available balance is sufficient, and the terms and conditions have been accepted.
+
+The frontend does not directly update the tuition status. Payment processing and OTP verification are handled by the Payment Service.
+
 ## Payment Status Safety
 
-Tuition status is updated using a conditional SQL statement:
+Tuition status is updated using one conditional SQL statement:
 
 ```sql
 UPDATE tuition_bills
@@ -103,26 +138,10 @@ The complete payment transaction, account debit, OTP verification, transaction i
 
 ## Running
 
-Create and activate a virtual environment.
-
-macOS / Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Windows:
-
-```powershell
-python -m venv .venv
-.venv\Scripts\activate
-```
-
 Install dependencies:
 
 ```bash
-python -m pip install fastapi uvicorn pymysql python-dotenv
+python -m pip install -r backend/requirements.txt
 ```
 
 Create a `.env` file in the project root:
@@ -141,13 +160,13 @@ Import the database:
 mysql -u root < db/tuition.sql
 ```
 
-If the MySQL root account requires a password:
+If MySQL requires a password:
 
 ```bash
 mysql -u root -p < db/tuition.sql
 ```
 
-Run the service:
+Run the Tuition Service:
 
 ```bash
 python -m uvicorn backend.controllers.tuition_controller:app --host 0.0.0.0 --port 8002
@@ -159,7 +178,41 @@ Swagger is available at:
 http://localhost:8002/docs
 ```
 
+## Running the Web
+
+Keep the Tuition Service running and open another terminal.
+
+Run the frontend:
+
+```bash
+python3 -m http.server 3000 --directory frontend
+```
+
+On Windows:
+
+```powershell
+python -m http.server 3000 --directory frontend
+```
+
+Open:
+
+```text
+http://localhost:3000/pages/tuition.html
+```
+
+The Tuition Service must be running on port `8002` for Student ID lookup to work.
+
+The User & Account Service must also be running on port `8001` for the logged-in user's payer information and available balance to be loaded automatically.
+
 ## Manual Testing
+
+Test all tuition records:
+
+```text
+GET /api/v1/tuition
+```
+
+Expected: `200 OK`.
 
 Test an existing unpaid tuition:
 
@@ -167,7 +220,7 @@ Test an existing unpaid tuition:
 GET /api/v1/tuition/524H0012
 ```
 
-Expected: `200 OK`.
+Expected: `200 OK` with `"status": "UNPAID"`.
 
 Test a paid tuition:
 

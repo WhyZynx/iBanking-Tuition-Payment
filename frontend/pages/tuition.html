@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tuition Payment | iBanking</title>
+    <link rel="stylesheet" href="../css/tuition.css">
+</head>
+
+<body>
+    <header class="top-header">
+        <div class="header-content">
+            <div class="school">
+                <div class="school-mark">TDTU</div>
+
+                <div>
+                    <h1>iBanking</h1>
+                    <p>Tuition Payment System</p>
+                </div>
+            </div>
+
+            <div class="account">
+                <div class="account-text">
+                    <span>Logged in as</span>
+                    <strong id="headerUserName">User</strong>
+                </div>
+
+                <div id="avatar" class="avatar">U</div>
+            </div>
+        </div>
+    </header>
+
+    <nav class="navigation">
+        <div class="navigation-content">
+            <a href="../index.html">Home</a>
+            <a href="#">Account</a>
+            <a href="tuition.html" class="active">Tuition Payment</a>
+            <a href="#">Transaction History</a>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="breadcrumb">
+            Home <span>›</span> Tuition Payment
+        </div>
+
+        <div class="page-heading">
+            <h2>Tuition Payment</h2>
+            <p>Payment of tuition fees for TDTU students</p>
+        </div>
+
+        <div id="pageMessage" class="notice"></div>
+
+        <section class="section">
+            <div class="section-header">
+                <div class="section-number">1</div>
+
+                <div>
+                    <h3>Payer Information</h3>
+                    <p>Information of the currently logged-in user</p>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="field">
+                    <label>Full Name</label>
+                    <input
+                        id="payerName"
+                        type="text"
+                        placeholder="Waiting for account integration"
+                        readonly
+                    >
+                </div>
+
+                <div class="field">
+                    <label>Phone Number</label>
+                    <input
+                        id="payerPhone"
+                        type="text"
+                        placeholder="Waiting for account integration"
+                        readonly
+                    >
+                </div>
+
+                <div class="field full">
+                    <label>Email Address</label>
+                    <input
+                        id="payerEmail"
+                        type="text"
+                        placeholder="Waiting for account integration"
+                        readonly
+                    >
+                </div>
+            </div>
+        </section>
+
+        <section class="section">
+            <div class="section-header">
+                <div class="section-number">2</div>
+
+                <div>
+                    <h3>Tuition Information</h3>
+                    <p>Enter a student ID to retrieve tuition information</p>
+                </div>
+            </div>
+
+            <div class="student-search">
+                <label for="studentId">
+                    Student ID <span>*</span>
+                </label>
+
+                <div class="search-control">
+                    <input
+                        id="studentId"
+                        type="text"
+                        placeholder="Enter student ID, e.g. 524H0012"
+                        autocomplete="off"
+                    >
+
+                    <button id="searchButton" type="button">
+                        Search
+                    </button>
+                </div>
+            </div>
+
+            <div id="tuitionMessage" class="message error"></div>
+
+            <div id="tuitionResult" class="student-information hidden">
+                <div class="information-title">
+                    Student Tuition Information
+                </div>
+
+                <div class="information-grid">
+                    <div class="information-item">
+                        <span>Student ID</span>
+                        <strong id="resultStudentId"></strong>
+                    </div>
+
+                    <div class="information-item">
+                        <span>Student Name</span>
+                        <strong id="resultStudentName"></strong>
+                    </div>
+
+                    <div class="information-item">
+                        <span>Tuition Fee</span>
+                        <strong
+                            id="resultTuitionFee"
+                            class="tuition-fee"
+                        ></strong>
+                    </div>
+
+                    <div class="information-item">
+                        <span>Payment Status</span>
+                        <strong>
+                            <span
+                                id="statusBadge"
+                                class="status"
+                            ></span>
+                        </strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="paymentSection" class="section hidden">
+            <div class="section-header">
+                <div class="section-number">3</div>
+
+                <div>
+                    <h3>Payment Information</h3>
+                    <p>Review payment details before confirming the transaction</p>
+                </div>
+            </div>
+
+            <div class="payment-information">
+                <div class="payment-item">
+                    <div>
+                        <span>Available Balance</span>
+                        <p>Available balance of the payer's account</p>
+                    </div>
+
+                    <strong id="availableBalance">—</strong>
+                </div>
+
+                <div class="payment-item">
+                    <div>
+                        <span>Payment Amount</span>
+                        <p>The full tuition fee must be paid</p>
+                    </div>
+
+                    <strong
+                        id="paymentAmount"
+                        class="payment-amount"
+                    >
+                        —
+                    </strong>
+                </div>
+            </div>
+
+            <div id="balanceMessage" class="message error"></div>
+
+            <div class="terms-box">
+                <input
+                    id="termsCheckbox"
+                    type="checkbox"
+                >
+
+                <label for="termsCheckbox">
+                    I confirm that the information above is correct and
+                    agree to the terms and conditions of the transaction.
+                </label>
+            </div>
+
+            <div class="action">
+                <button
+                    id="confirmButton"
+                    type="button"
+                    disabled
+                >
+                    Confirm Transaction
+                </button>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div>
+            iBanking Tuition Payment System
+        </div>
+    </footer>
+
+    <script src="../js/tuition.js"></script>
+</body>
+</html>

@@ -142,5 +142,6 @@ def test_concurrent_debits_allow_only_one_success(client):
     assert sorted(statuses) == [200, 409]
     db = SessionLocal()
     account = db.get(Account, "1012345678")
+    assert account is not None
     assert account.balance == Decimal("7000000")
     db.close()

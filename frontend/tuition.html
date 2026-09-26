@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tuition | iBanking</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/tuition.js" defer></script>
+</head>
+
+<body>
+    <header class="top-header">
+        <div class="header-content container">
+            <a class="school" href="index.html">
+                <span class="school-mark">TDTU</span>
+
+                <span class="school-name">
+                    <strong>iBanking</strong>
+                    <small>Tuition Payment System</small>
+                </span>
+            </a>
+
+            <div class="portal-label">
+                <span>University</span>
+                <strong>Payment Portal</strong>
+            </div>
+        </div>
+    </header>
+
+    <nav class="navigation" aria-label="Main navigation">
+        <div class="navigation-content container">
+            <a href="index.html">Home</a>
+            <a href="dashboard.html">Dashboard</a>
+            <a class="active" href="tuition.html">Tuition</a>
+            <a href="accounts.html">Accounts</a>
+            <a href="history.html">History</a>
+            <a href="profile.html">Profile</a>
+        </div>
+    </nav>
+
+    <main class="container page-content tuition-page">
+        <div class="breadcrumb">
+            Home <span>›</span> Tuition
+        </div>
+
+        <div class="page-heading">
+            <h1>Tuition Payment</h1>
+            <p>Search and review tuition information for TDTU students.</p>
+        </div>
+
+        <div
+            id="tuition-service-message"
+            class="tuition-message error-message hidden"
+            role="alert"
+        ></div>
+
+        <section class="card tuition-section">
+            <div class="tuition-section-heading">
+                <span class="step-number">1</span>
+
+                <div>
+                    <h2>Payer Information</h2>
+                    <p>Payer information will be provided by User Service.</p>
+                </div>
+            </div>
+
+            <div class="tuition-detail-grid">
+                <div class="tuition-detail">
+                    <span>Full Name</span>
+                    <strong>Not connected</strong>
+                </div>
+
+                <div class="tuition-detail">
+                    <span>Phone</span>
+                    <strong>Not connected</strong>
+                </div>
+
+                <div class="tuition-detail">
+                    <span>Email</span>
+                    <strong>Not connected</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="card tuition-section">
+            <div class="tuition-section-heading">
+                <span class="step-number">2</span>
+
+                <div>
+                    <h2>Tuition Information</h2>
+                    <p>Enter a Student ID to retrieve tuition information.</p>
+                </div>
+            </div>
+
+            <form id="tuition-search-form" class="student-search-form">
+                <label for="student-id">Student ID</label>
+
+                <div class="search-control">
+                    <input
+                        id="student-id"
+                        name="studentId"
+                        type="text"
+                        autocomplete="off"
+                        placeholder="Enter student ID"
+                        required
+                    >
+
+                    <button
+                        id="search-button"
+                        class="button"
+                        type="submit"
+                    >
+                        Search
+                    </button>
+                </div>
+            </form>
+
+            <p
+                id="tuition-lookup-message"
+                class="tuition-inline-message"
+                role="alert"
+            ></p>
+
+            <div
+                id="tuition-result"
+                class="tuition-result hidden"
+                aria-live="polite"
+            >
+                <h3>Student Tuition Information</h3>
+
+                <div class="tuition-detail-grid">
+                    <div class="tuition-detail">
+                        <span>Student ID</span>
+                        <strong id="result-student-id">-</strong>
+                    </div>
+
+                    <div class="tuition-detail">
+                        <span>Student Name</span>
+                        <strong id="result-student-name">-</strong>
+                    </div>
+
+                    <div class="tuition-detail">
+                        <span>Tuition Amount</span>
+                        <strong
+                            id="result-tuition-amount"
+                            class="tuition-amount"
+                        >
+                            -
+                        </strong>
+                    </div>
+
+                    <div class="tuition-detail">
+                        <span>Payment Status</span>
+
+                        <strong>
+                            <span
+                                id="result-tuition-status"
+                                class="tuition-status unknown"
+                            >
+                                -
+                            </span>
+                        </strong>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section
+            id="payment-section"
+            class="card tuition-section hidden"
+        >
+            <div class="tuition-section-heading">
+                <span class="step-number">3</span>
+
+                <div>
+                    <h2>Payment Information</h2>
+                    <p>Payment processing will be handled by Payment Service.</p>
+                </div>
+            </div>
+
+            <div class="payment-summary">
+                <div>
+                    <span>Available Balance</span>
+                    <strong>Not connected</strong>
+                </div>
+
+                <div>
+                    <span>Payment Amount</span>
+                    <strong
+                        id="selected-tuition-amount"
+                        class="tuition-amount"
+                    >
+                        -
+                    </strong>
+                </div>
+            </div>
+
+            <p
+                id="payment-status-message"
+                class="tuition-inline-message"
+                role="status"
+            ></p>
+
+            <label class="confirmation-check">
+                <input id="confirm-details" type="checkbox" disabled>
+
+                <span>
+                    I confirm that the information above is correct and agree to the terms and conditions of the transaction.
+                </span>
+            </label>
+
+            <button
+                id="confirm-payment"
+                class="button"
+                type="button"
+                disabled
+            >
+                Confirm Transaction
+            </button>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <a class="brand" href="index.html">iBanking</a>
+            <span>TDTU Tuition Payment System</span>
+        </div>
+    </footer>
+</body>
+</html>

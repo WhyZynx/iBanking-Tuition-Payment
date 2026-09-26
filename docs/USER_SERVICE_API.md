@@ -96,3 +96,5 @@ python -m pytest -q
 ```
 
 The tests use a local SQLite file only for isolated automated testing; production configuration remains MySQL.
+
+Transaction History is not backed by a User Service endpoint. Its ownership and frontend integration point are described in [USER_SERVICE_INTEGRATION.md](USER_SERVICE_INTEGRATION.md). No transaction table or PaymentDB access is added to User Service.

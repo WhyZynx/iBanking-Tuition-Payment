@@ -76,13 +76,29 @@ def test_invalid_login_and_missing_token(client: TestClient):
     assert client.post("/api/v1/auth/login", json={"username": "user01", "password": "wrong"}).status_code == 401
     assert client.post("/api/v1/auth/login", json={"username": "missing", "password": "123456"}).status_code == 401
     assert client.get("/api/v1/users/me").status_code == 401
+    assert client.get("/api/v1/users/me", headers={"Authorization": "Bearer invalid-token"}).status_code == 401
 
 
 def test_accounts_are_scoped_to_current_user(client: TestClient):
+    db = SessionLocal()
+    other_user = User(
+        username="user02",
+        password_hash=hash_password("other-password"),
+        full_name="Nguyen Van B",
+        phone="0900000000",
+        email="user02@example.com",
+    )
+    db.add(other_user)
+    db.flush()
+    db.add(Account(account_number="2012345678", user_id=other_user.user_id, balance=Decimal("9000000")))
+    db.commit()
+    db.close()
+
     token = login(client)
     response = client.get("/api/v1/accounts/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
     assert [account["accountNumber"] for account in response.json()] == ["1012345678", "1000000000", "1012345679"]
+    assert "2012345678" not in response.text
 
 
 def test_internal_lookup_and_debit(client: TestClient):

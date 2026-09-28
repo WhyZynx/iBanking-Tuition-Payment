@@ -47,6 +47,23 @@ def get_current_user_id(
         ) from exc
 
 
+def get_pending_user_transaction(db_session, transaction_id, current_user_id):
+    transaction = TransactionModel.find_by_id(db_session, transaction_id)
+    if transaction is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
+    if transaction.payer_user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Transaction does not belong to the authenticated user",
+        )
+    if transaction.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Transaction is not pending",
+        )
+    return transaction
+
+
 @router.post("/api/v1/payments", status_code=status.HTTP_201_CREATED)
 def create_payment(
     request: CreatePaymentRequest,
@@ -61,17 +78,28 @@ def create_payment(
     )
 
 
+@router.post("/api/v1/payments/{transaction_id}/otp")
+def request_otp(
+    transaction_id: str,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    get_pending_user_transaction(db_session, transaction_id, current_user_id)
+    return payment_service.request_otp(
+        db_session=db_session,
+        transaction_id=transaction_id,
+        access_token=credentials.credentials,
+    )
+
+
 @router.post("/api/v1/payments/confirm")
 def confirm_payment(
     request: ConfirmPaymentRequest,
     current_user_id: int = Depends(get_current_user_id),
     db_session: Session = Depends(get_db),
 ):
-    transaction = TransactionModel.find_by_id(db_session, request.transactionId)
-    if transaction is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    if transaction.payer_user_id != current_user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Transaction does not belong to the authenticated user")
+    get_pending_user_transaction(db_session, request.transactionId, current_user_id)
 
     result = payment_service.confirm_payment(
         db_session=db_session,

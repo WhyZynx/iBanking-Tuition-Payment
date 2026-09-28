@@ -1,4 +1,6 @@
-import json
+import secrets
+import smtplib
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
 from uuid import uuid4
@@ -13,9 +15,60 @@ from backend.payment_service.config import (
 )
 from backend.payment_service.models.otpModel import OtpModel
 from backend.payment_service.models.transactionModel import TransactionModel
+from backend.payment_service.services.email_service import send_otp_email
 
 
 class PaymentService:
+    def request_otp(self, db_session, transaction_id, access_token):
+        try:
+            user_response = requests.get(
+                f"{USER_SERVICE_URL}/api/v1/users/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User Service is unavailable",
+            ) from exc
+
+        if user_response.status_code != status.HTTP_200_OK:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Unable to retrieve the account email from User Service",
+            )
+        email = user_response.json().get("email")
+        if not email:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service response is missing an email address",
+            )
+
+        otp_code = None
+        for _ in range(20):
+            candidate = f"{secrets.randbelow(1_000_000):06d}"
+            if not OtpModel.is_active_code(db_session, candidate):
+                otp_code = candidate
+                break
+        if otp_code is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to generate a unique active OTP",
+            )
+
+        expires_at = datetime.now() + timedelta(minutes=5)
+        otp_id = OtpModel.create(db_session, transaction_id, otp_code, expires_at)
+        try:
+            send_otp_email(email, transaction_id, otp_code, expires_at)
+        except (OSError, RuntimeError, smtplib.SMTPException) as exc:
+            OtpModel.mark_as_used(db_session, otp_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Unable to send OTP email",
+            ) from exc
+
+        return {"message": "OTP sent to the registered email address", "expires_in_seconds": 300}
+
     def create_payment(self, db_session, payer_user_id, student_id, account_number):
         headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
         try:
@@ -127,24 +180,7 @@ class PaymentService:
     def confirm_payment(self, db_session, transaction_id, otp_code):
         otp_record = OtpModel.verify(db_session, transaction_id, otp_code)
         if not otp_record:
-            return {"success": False, "message": "MĂ£ OTP sai hoáº·c Ä‘Ă£ háº¿t háº¡n!"}
+            return {"success": False, "message": "OTP is invalid, expired, or already used"}
 
-        transaction = TransactionModel.find_by_id(db_session, transaction_id)
-        user_service_url = (
-            f"{USER_SERVICE_URL}/api/v1/internal/accounts/"
-            f"{transaction.source_account_number}/debit"
-        )
-        headers = {"X-Internal-API-Key": INTERNAL_API_KEY, "Content-Type": "application/json"}
-        payload = (
-            f'{{"amount":{transaction.amount},'
-            f'"transactionId":{json.dumps(transaction_id)}}}'
-        )
-        response = requests.post(user_service_url, data=payload, headers=headers)
-
-        if response.status_code == 200:
-            TransactionModel.update_status(db_session, transaction_id, "SUCCESS")
-            OtpModel.mark_as_used(db_session, otp_record.otp_id)
-            return {"success": True, "message": "Thanh toĂ¡n thĂ nh cĂ´ng!"}
-
-        TransactionModel.update_status(db_session, transaction_id, "FAILED")
-        return {"success": False, "message": "Sá»‘ dÆ° khĂ´ng Ä‘á»§ hoáº·c lá»—i tĂ i khoáº£n!"}
+        OtpModel.mark_as_used(db_session, otp_record.otp_id)
+        return {"success": True, "message": "OTP verified; payment has not been processed"}

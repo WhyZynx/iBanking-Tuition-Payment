@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Accounts | iBanking</title>
+	<link rel="stylesheet" href="css/style.css">
+	<script src="js/auth.js" defer></script>
+	<script src="js/accounts.js" defer></script>
+</head>
+<body class="auth-pending">
+	<header class="top-header"><div class="header-content container"><a class="school" href="index.html"><span class="school-mark">TDTU</span><span class="school-name"><strong>iBanking</strong><small>Tuition Payment System</small></span></a><div class="portal-label"><span>University</span><strong>Payment Portal</strong></div></div></header>
+		<nav class="navigation" aria-label="Main navigation"><div class="navigation-content container">
+		<a class="public-home-link" href="index.html">Home</a> <a class="auth-link logged-in-only hidden" href="dashboard.html">Dashboard</a> <a class="auth-link logged-in-only hidden" href="tuition.html">Tuition</a> <a class="auth-link logged-in-only hidden active" href="accounts.html">Accounts</a> <a class="auth-link logged-in-only hidden" href="history.html">History</a> <a class="auth-link logged-in-only hidden" href="profile.html">Profile</a> <a class="auth-link logged-out-only" href="login.html">Login</a> <a class="auth-link logged-in-only hidden" href="login.html" data-logout>Logout</a>
+	</div></nav>
+	<main class="container page-content">
+		<div class="page-heading"><p class="eyebrow">Payment accounts</p><h1>Accounts</h1><p class="muted">These simulated payment accounts and balances are stored in AccountDB. They are not real bank accounts.</p></div>
+		<section id="account-list" class="account-list" aria-live="polite"><p class="muted">Loading accounts...</p></section>
+		<p id="accounts-error" class="form-error" role="alert"></p>
+	</main>
+	<footer class="site-footer"><div class="container footer-inner"><a class="brand" href="index.html">iBanking</a><span>TDTU Tuition Payment System</span></div></footer>
+</body>
+</html>

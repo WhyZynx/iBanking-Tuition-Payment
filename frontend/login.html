@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Sign In | iBanking</title>
+	<link rel="stylesheet" href="css/style.css">
+	<script src="js/auth.js" defer></script>
+</head>
+<body>
+	<header class="top-header">
+		<div class="header-content container">
+			<a class="school" href="index.html"><span class="school-mark">iB</span><span class="school-name"><strong>iBanking</strong><small>TDTU Tuition Payment</small></span></a>
+			<div class="portal-label"><span>University</span><strong>Payment Portal</strong></div>
+		</div>
+	</header>
+	<nav class="navigation" aria-label="Main navigation">
+		<div class="navigation-content container">
+			<a class="public-home-link" href="index.html">Home</a>
+			<a class="auth-link logged-in-only hidden" href="dashboard.html">Dashboard</a>
+			<a class="auth-link logged-in-only hidden" href="tuition.html">Tuition</a>
+			<a class="auth-link logged-in-only hidden" href="accounts.html">Accounts</a>
+			<a class="auth-link logged-in-only hidden" href="history.html">History</a>
+			<a class="auth-link logged-in-only hidden" href="profile.html">Profile</a>
+			<a class="auth-link logged-out-only active" href="login.html">Sign In</a>
+			<a class="auth-link logged-in-only hidden" href="login.html" data-logout>Logout</a>
+		</div>
+	</nav>
+
+	<main class="container signin-page">
+		<section class="card signin-card">
+			<div class="signin-brand" aria-hidden="true">iBanking</div>
+			<p class="eyebrow">Welcome back</p>
+			<h1>Sign in to your account</h1>
+			<p class="muted">Use your assigned username and password to continue.</p>
+			<form id="login-form" class="form-stack">
+				<label for="username">Username</label>
+				<input id="username" name="username" autocomplete="username" required>
+				<label for="password">Password</label>
+				<input id="password" name="password" type="password" autocomplete="current-password" required>
+				<button class="button" type="submit">Sign In</button>
+				<p id="login-error" class="form-error" role="alert"></p>
+			</form>
+			<p class="small-note">Demo account: <code>user01</code> / <code>123456</code></p>
+			<a class="back-home" href="index.html">&larr; Back to Home</a>
+		</section>
+	</main>
+	<footer class="site-footer"><div class="container footer-inner"><span class="brand">iBanking</span><span>TDTU Tuition Payment System</span></div></footer>
+	<script>
+		document.getElementById('login-form').addEventListener('submit', async event => {
+			event.preventDefault();
+			const form = event.currentTarget;
+			const errorBox = document.getElementById('login-error');
+			errorBox.textContent = '';
+			try {
+				await window.IBanking.login(form.username.value, form.password.value);
+				window.location.href = 'dashboard.html';
+			} catch (error) {
+				errorBox.textContent = error.message;
+			}
+		});
+	</script>
+</body>
+</html>

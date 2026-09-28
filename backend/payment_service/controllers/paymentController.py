@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.payment_service.config import JWT_ALGORITHM, JWT_SECRET_KEY
@@ -18,6 +18,13 @@ bearer_scheme = HTTPBearer(auto_error=False)
 class ConfirmPaymentRequest(BaseModel):
     transactionId: str
     otpCode: str
+
+
+class CreatePaymentRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    student_id: str = Field(min_length=1, max_length=20)
+    account_number: str = Field(min_length=1, max_length=20)
 
 
 def get_current_user_id(
@@ -38,6 +45,20 @@ def get_current_user_id(
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
+
+
+@router.post("/api/v1/payments", status_code=status.HTTP_201_CREATED)
+def create_payment(
+    request: CreatePaymentRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    return payment_service.create_payment(
+        db_session=db_session,
+        payer_user_id=current_user_id,
+        student_id=request.student_id,
+        account_number=request.account_number,
+    )
 
 
 @router.post("/api/v1/payments/confirm")

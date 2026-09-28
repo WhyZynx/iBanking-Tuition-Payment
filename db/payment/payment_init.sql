@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     payer_user_id BIGINT,
     source_account_number VARCHAR(20),
     student_id VARCHAR(20),
+    student_name VARCHAR(255) NULL,
     amount DECIMAL(15, 2),
     status VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

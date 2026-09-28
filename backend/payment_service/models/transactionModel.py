@@ -56,7 +56,7 @@ class TransactionModel:
                 "studentId": row[1],
                 # Do Database cá»§a báº¡n chÆ°a lÆ°u studentName, ta táº¡m Ä‘á»ƒ trá»‘ng hoáº·c láº¥y tá»« Tuition Service sau
                 "studentName": "N/A", 
-                "amount": float(row[2]),
+                "amount": row[2],
                 "status": row[3],
                 "createdAt": row[4].isoformat() if row[4] else None
             })

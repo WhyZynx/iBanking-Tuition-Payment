@@ -1,4 +1,8 @@
+import json
+
 import requests
+
+from backend.payment_service.config import INTERNAL_API_KEY, USER_SERVICE_URL
 
 # Import Ä‘Ăºng class tá»« cĂ¡c file model cá»§a báº¡n
 from backend.payment_service.models.otpModel import OtpModel
@@ -17,17 +21,18 @@ class PaymentService:
         transaction = TransactionModel.find_by_id(db_session, transaction_id)
         
         # "Gá»i Ä‘iá»‡n" sang User Service nhá» trá»« tiá»n
-        user_service_url = f"http://localhost:8001/api/v1/internal/accounts/{transaction.source_account_number}/debit"
+        user_service_url = f"{USER_SERVICE_URL}/api/v1/internal/accounts/{transaction.source_account_number}/debit"
         headers = {
-            "X-Internal-API-Key": "my-secret-key" # MĂ£ bĂ­ máº­t Ä‘á»ƒ User Service cho phĂ©p trá»« tiá»n
+            "X-Internal-API-Key": INTERNAL_API_KEY # MĂ£ bĂ­ máº­t Ä‘á»ƒ User Service cho phĂ©p trá»« tiá»n
         }
-        payload = {
-            "amount": float(transaction.amount),
-            "transactionId": transaction_id
-        }
+        payload = (
+            f'{{"amount":{transaction.amount},'
+            f'"transactionId":{json.dumps(transaction_id)}}}'
+        )
 
         # Thá»±c hiá»‡n cuá»™c gá»i API 
-        response = requests.post(user_service_url, json=payload, headers=headers)
+        headers["Content-Type"] = "application/json"
+        response = requests.post(user_service_url, data=payload, headers=headers)
 
         # Xá»­ lĂ½ káº¿t quáº£ tá»« User Service
         if response.status_code == 200:

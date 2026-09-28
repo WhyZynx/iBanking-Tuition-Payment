@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.user_service.database import Base
 
 if TYPE_CHECKING:
-    from backend.user_service.models.models.account import Account
+    from backend.user_service.models.account import Account
 
 
 class User(Base):

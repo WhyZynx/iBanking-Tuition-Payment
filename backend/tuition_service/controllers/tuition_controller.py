@@ -14,6 +14,7 @@ router = APIRouter(
     tags=["Tuition"]
 )
 
+
 @router.get(
     "",
     response_model=list[TuitionBill]

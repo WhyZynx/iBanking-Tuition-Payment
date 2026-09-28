@@ -1,12 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.payment_service.config import PAYMENT_DATABASE_URL
+
 # Cáº¥u hĂ¬nh káº¿t ná»‘i MySQL. 
 # Máº·c Ä‘á»‹nh (nhÆ° XAMPP) thÆ°á»ng dĂ¹ng user 'root' vĂ  khĂ´ng cĂ³ máº­t kháº©u.
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:@localhost:3306/payment_db"
 
 # Táº¡o Ä‘á»™ng cÆ¡ káº¿t ná»‘i
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(PAYMENT_DATABASE_URL)
 
 # Táº¡o xÆ°á»Ÿng sáº£n xuáº¥t phiĂªn lĂ m viá»‡c (Session)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

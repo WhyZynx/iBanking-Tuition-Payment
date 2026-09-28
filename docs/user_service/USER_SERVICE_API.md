@@ -83,10 +83,10 @@ Debit uses one atomic SQL update with predicates for `ACTIVE` status and `balanc
 ## Running
 
 ```powershell
-python -m pip install -r backend/requirements.txt
-mysql -u root -p < db/init.sql
-Copy-Item backend/.env.example backend/.env
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
+python -m pip install -r backend/user_service/requirements.txt
+mysql -u root -p < db/user/init.sql
+Copy-Item backend/user_service/.env.example backend/user_service/.env
+python -m uvicorn backend.user_service.main:app --host 0.0.0.0 --port 8001
 ```
 
 Run tests with:

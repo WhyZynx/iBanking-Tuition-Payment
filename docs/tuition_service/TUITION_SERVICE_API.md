@@ -168,12 +168,12 @@ Windows:
 ### 2. Install Dependencies
 
 ```bash
-python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/tuition_service/requirements.txt
 ```
 
 ### 3. Configure the Database
 
-Create a `.env` file in the project root:
+Create `backend/tuition_service/.env` for local settings:
 
 ```env
 TUITION_DB_HOST=localhost
@@ -186,19 +186,19 @@ TUITION_DB_NAME=ibanking_tuition
 Import the Tuition database:
 
 ```bash
-mysql -u root < db/tuition.sql
+mysql -u root < db/tuition/tuition.sql
 ```
 
 If MySQL requires a password:
 
 ```bash
-mysql -u root -p < db/tuition.sql
+mysql -u root -p < db/tuition/tuition.sql
 ```
 
 ### 4. Run the Tuition Service
 
 ```bash
-python -m uvicorn backend.controllers.tuition_controller:app --reload --port 8002
+python -m uvicorn backend.tuition_service.main:app --reload --port 8002
 ```
 
 Swagger:
@@ -254,19 +254,19 @@ The Payment Service will handle the final payment workflow, OTP verification, ac
 The automated tests are located at:
 
 ```text
-tests/test_tuition_service.py
+tests/tuition_service/test_tuition_service.py
 ```
 
 Install the required dependencies:
 
 ```bash
-python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/tuition_service/requirements.txt
 ```
 
 Run the Tuition Service tests:
 
 ```bash
-python -m pytest tests/test_tuition_service.py -v
+python -m pytest tests/tuition_service/test_tuition_service.py -v
 ```
 
 Or run all tests inside the `tests` directory:

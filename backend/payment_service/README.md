@@ -1,9 +1,9 @@
 # Payment Service
 
-Entry point: `main:app` from the service directory.
+Entry point: `backend.payment_service.main:app` from the repository root.
 
 ```powershell
-python -m uvicorn main:app --host 0.0.0.0 --port 8003
+python -m uvicorn backend.payment_service.main:app --host 0.0.0.0 --port 8003
 ```
 
-This entry point and port are for running the isolated service in the combined repository. Payment workflow and database configuration remain as in the imported source.
+Copy `.env.example` to `.env` in this directory and set local database, service URL, JWT, and internal API key values. The payment confirmation route can only process a transaction and OTP already present in PaymentDB; creating payments and coordinating Tuition Service are future workflow work. See [../../docs/API_CONTRACTS.md](../../docs/API_CONTRACTS.md).

@@ -13,15 +13,15 @@ User Service does not own tuition data, payment transactions, OTP, email, or the
 
 ## Project files
 
-- `backend/main.py`: creates the FastAPI app, registers routers and CORS, and exposes `/health`.
-- `backend/database.py`: SQLAlchemy engine, session factory, and database dependency.
-- `backend/config.py`: loads database, JWT, and internal API key settings from environment configuration.
-- `backend/security.py`: password hashing/checking and JWT encode/decode.
-- `backend/dependencies.py`: authenticated-user and bearer-token dependency.
-- `backend/models/`: SQLAlchemy `User` and `Account` models.
-- `backend/schemas/`: request and response validation/serialization.
-- `backend/controllers/`: FastAPI route definitions.
-- `backend/services/`: authentication, account listing, lookup, and debit logic.
+- `backend/user_service/main.py`: creates the FastAPI app, registers routers and CORS, and exposes `/health`.
+- `backend/user_service/database.py`: SQLAlchemy engine, session factory, and database dependency.
+- `backend/user_service/config.py`: loads database, JWT, and internal API key settings from environment configuration.
+- `backend/user_service/security.py`: password hashing/checking and JWT encode/decode.
+- `backend/user_service/dependencies.py`: authenticated-user and bearer-token dependency.
+- `backend/user_service/models/`: SQLAlchemy `User` and `Account` models.
+- `backend/user_service/schemas/`: request and response validation/serialization.
+- `backend/user_service/controllers/`: FastAPI route definitions.
+- `backend/user_service/services/`: authentication, account listing, lookup, and debit logic.
 - `frontend/index.html`: public landing page.
 - `frontend/login.html`: login form and User Service login call.
 - `frontend/dashboard.html` and `frontend/js/dashboard.js`: authenticated overview and account summary.
@@ -33,7 +33,7 @@ User Service does not own tuition data, payment transactions, OTP, email, or the
 - `frontend/css/style.css`: shared responsive styles.
 - `frontend/assets/ibanking-hero.png`: homepage illustration.
 - `tests/`: User Service API, account scoping, debit, and concurrency tests.
-- `db/init.sql`: MySQL `users` and `accounts` schema and demo seed data.
+- `db/user/init.sql`: MySQL `users` and `accounts` schema and demo seed data.
 
 ## Current service endpoints
 
@@ -47,7 +47,7 @@ User Service local development base URL: `http://localhost:8001`.
 | Internal account lookup | Payment Service only | User Service internal | `GET /api/v1/internal/accounts/{account_number}` |
 | Internal debit | Payment Service only | User Service internal | `POST /api/v1/internal/accounts/{account_number}/debit` |
 | Tuition lookup | `tuition.html` | Tuition Service | Current UI calls `GET /api/v1/tuition/{student_id}`; Student 2/team must confirm the service contract. |
-| Transaction history | `history.html` | Payment Service | Endpoint and host/port are **TBD by Student 3**. |
+| Transaction history | `history.html` | Payment Service | `GET /api/v1/transactions/me` at port `8003`; requires the user JWT. |
 
 The application-level architecture may place an API Gateway in front of these services:
 
@@ -123,7 +123,7 @@ Successful response (`200`):
 
 Relevant failures are `401` for a missing/invalid internal API key, `404` for a missing account, `409` for an inactive account or insufficient balance, and `422` for invalid request fields/amount. Payment Service should handle the response and decide whether its own payment can continue or must fail.
 
-`INTERNAL_API_KEY` is configured in the User Service environment (`backend/.env`, based on `backend/.env.example`). Share the secret through the team's approved private configuration channel; never place it in HTML, browser JavaScript, or frontend build settings. The frontend must never call either `/api/v1/internal/accounts/...` route.
+`INTERNAL_API_KEY` is configured in the User Service environment (`backend/user_service/.env`, based on `backend/user_service/.env.example`). Share the secret through the team's approved private configuration channel; never place it in HTML, browser JavaScript, or frontend build settings. The frontend must never call either `/api/v1/internal/accounts/...` route.
 
 ### Debit sequence
 
@@ -147,7 +147,7 @@ Only a request that changes one row succeeds. For example, if two concurrent req
 
 ## History integration
 
-`history.html` and `frontend/js/history.js` are UI/integration only. The Payment Service host/port and history API are **TBD by Student 3**; the frontend intentionally has no guessed default host. The existing proposal is:
+`history.html` and `frontend/js/history.js` are UI/integration only. The Payment Service runs at `http://localhost:8003`; history is `GET /api/v1/transactions/me` and requires the user JWT:
 
 ```http
 GET /api/v1/transactions/me
@@ -171,7 +171,7 @@ Proposed response shape for team review:
 }
 ```
 
-Student 3 must confirm the route, host/port, response fields, authorization behavior, and CORS/API Gateway configuration. The UI supports loading, empty, unconfigured, and unavailable states. Do not add transaction tables or transaction data to User Service.
+Payment verifies the bearer JWT and returns an `items` list compatible with the current history UI. The UI supports loading, empty, unconfigured, and unavailable states. Do not add transaction tables or transaction data to User Service.
 
 ## Environment and local run
 
@@ -179,15 +179,15 @@ Student 3 must confirm the route, host/port, response fields, authorization beha
 | --- | --- |
 | User Service | `8001` |
 | Frontend static server | `5500` |
-| Tuition Service | `8002` (current frontend setting; confirm with Student 2) |
-| Payment Service | **TBD by Student 3** |
+| Tuition Service | `8002` |
+| Payment Service | `8003` |
 
-Set local values in `backend/.env` using `backend/.env.example` as a template. Do not commit secrets.
+Set local values in `backend/user_service/.env` using `backend/user_service/.env.example` as a template. Do not commit secrets.
 
 **Terminal 1 — from the repository root:**
 
 ```powershell
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8001
+python -m uvicorn backend.user_service.main:app --host 0.0.0.0 --port 8001
 ```
 
 **Terminal 2 — from the repository root:**

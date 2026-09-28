@@ -1,8 +1,8 @@
 document.addEventListener('DOMContentLoaded', async () => {
 	if (!window.IBanking.requireAuthentication()) return;
 
-	// Set this after Student 3 confirms the Payment Service host and port.
-	const PAYMENT_SERVICE_URL = '';
+	// Payment Service host and port.
+	const PAYMENT_SERVICE_URL = 'http://localhost:8003';
 	const HISTORY_PATH = '/api/v1/transactions/me';
 	const message = document.getElementById('history-message');
 	const tableWrap = document.getElementById('history-table-wrap');

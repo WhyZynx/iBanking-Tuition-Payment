@@ -288,6 +288,57 @@ def test_concurrent_payment_status_allows_only_one_success(monkeypatch):
     assert sorted(statuses) == [200, 409]
 
 
+def test_concurrent_payment_claims_for_same_student_allow_one_payer(monkeypatch):
+    monkeypatch.setattr(
+        tuition_controller,
+        "INTERNAL_API_KEY",
+        TEST_INTERNAL_API_KEY
+    )
+    state = {"claim": None}
+    lock = Lock()
+
+    def create_connection():
+        cursor = MagicMock()
+
+        def execute(query, params=None):
+            if "INSERT IGNORE INTO tuition_payment_claims" in query:
+                transaction_id, student_id = params
+                with lock:
+                    if student_id == "524H0104" and state["claim"] is None:
+                        state["claim"] = transaction_id
+                        cursor.rowcount = 1
+                    else:
+                        cursor.rowcount = 0
+            elif "SELECT status FROM tuition_bills" in query:
+                cursor.fetchone.return_value = {"status": "UNPAID"}
+
+        cursor.execute.side_effect = execute
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value = cursor
+        cursor_context.__exit__.return_value = False
+        connection = MagicMock()
+        connection.cursor.return_value = cursor_context
+        return connection
+
+    def claim_once(transaction_id):
+        with TestClient(app) as concurrent_client:
+            return concurrent_client.post(
+                "/api/v1/tuition/524H0104/claim",
+                headers=INTERNAL_API_HEADERS,
+                json={"transaction_id": transaction_id},
+            )
+
+    with patch(
+        "backend.tuition_service.services.tuition_service.get_tuition_connection",
+        side_effect=create_connection,
+    ):
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            responses = list(executor.map(claim_once, ["TX-PAYER-A", "TX-PAYER-B"]))
+
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    assert state["claim"] in {"TX-PAYER-A", "TX-PAYER-B"}
+
+
 def test_pay_tuition_without_internal_api_key_is_rejected(client):
     response = client.put("/api/v1/tuition/524H0104/pay")
 

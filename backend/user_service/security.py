@@ -24,7 +24,7 @@ def create_access_token(user_id: int, username: str) -> str:
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def decode_access_token(token: str) -> dict:
+def decode_access_token(token: str) -> dict[str, object]:
     credentials_error = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid or expired token",
@@ -32,8 +32,9 @@ def decode_access_token(token: str) -> dict:
     )
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-        if not payload.get("sub"):
+        subject = payload.get("sub")
+        if not isinstance(subject, str) or not subject.isdecimal():
             raise credentials_error
-        return payload
+        return dict(payload)
     except (JWTError, ValueError) as exc:
         raise credentials_error from exc

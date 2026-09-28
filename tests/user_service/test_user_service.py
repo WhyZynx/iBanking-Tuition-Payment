@@ -15,6 +15,8 @@ from backend.user_service.main import app
 from backend.user_service.models import Account, User
 from backend.user_service.security import hash_password
 
+TEST_LOGIN_PASSWORD = "test-user-login-only"
+
 
 @pytest.fixture(autouse=True)
 def reset_database():
@@ -23,7 +25,7 @@ def reset_database():
     db = SessionLocal()
     user = User(
         username="user01",
-        password_hash=hash_password("123456"),
+        password_hash=hash_password(TEST_LOGIN_PASSWORD),
         full_name="Nguyen Van A",
         phone="0901234567",
         email="user01@example.com",
@@ -52,7 +54,7 @@ def client():
 
 
 def login(client: TestClient) -> str:
-    response = client.post("/api/v1/auth/login", json={"username": "user01", "password": "123456"})
+    response = client.post("/api/v1/auth/login", json={"username": "user01", "password": TEST_LOGIN_PASSWORD})
     assert response.status_code == 200
     return response.json()["access_token"]
 
@@ -74,7 +76,7 @@ def test_login_and_profile(client: TestClient):
 
 def test_invalid_login_and_missing_token(client: TestClient):
     assert client.post("/api/v1/auth/login", json={"username": "user01", "password": "wrong"}).status_code == 401
-    assert client.post("/api/v1/auth/login", json={"username": "missing", "password": "123456"}).status_code == 401
+    assert client.post("/api/v1/auth/login", json={"username": "missing", "password": TEST_LOGIN_PASSWORD}).status_code == 401
     assert client.get("/api/v1/users/me").status_code == 401
     assert client.get("/api/v1/users/me", headers={"Authorization": "Bearer invalid-token"}).status_code == 401
 
@@ -144,4 +146,32 @@ def test_concurrent_debits_allow_only_one_success(client):
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("7000000")
+    db.close()
+
+
+def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    account.balance = Decimal("1000000")
+    db.commit()
+    db.close()
+
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+
+    def debit_once(index):
+        with TestClient(app) as concurrent_client:
+            return concurrent_client.post(
+                "/api/v1/internal/accounts/1012345678/debit",
+                headers=headers,
+                json={"amount": 700000, "transactionId": f"RACE-{index}"},
+            ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        statuses = list(executor.map(debit_once, range(2)))
+
+    assert sorted(statuses) == [200, 409]
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account.balance == Decimal("300000")
+    assert account.balance >= 0
     db.close()

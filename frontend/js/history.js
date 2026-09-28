@@ -1,34 +1,31 @@
 document.addEventListener('DOMContentLoaded', async () => {
 	if (!window.IBanking.requireAuthentication()) return;
 
-	// Payment Service host and port.
-	const PAYMENT_SERVICE_URL = 'http://localhost:8003';
-	const HISTORY_PATH = '/api/v1/transactions/me';
 	const message = document.getElementById('history-message');
 	const tableWrap = document.getElementById('history-table-wrap');
 	const rows = document.getElementById('history-items');
-	const token = sessionStorage.getItem(window.IBanking.TOKEN_KEY);
-	if (!PAYMENT_SERVICE_URL) {
-		message.textContent = 'Payment Service endpoint is not configured yet. Transaction history will appear after the service endpoint is confirmed.';
-		return;
-	}
 
 	try {
-		const response = await fetch(`${PAYMENT_SERVICE_URL}${HISTORY_PATH}`, {
-			headers: { Authorization: `Bearer ${token}` }
-		});
-		if (!response.ok) throw new Error(`Payment Service returned HTTP ${response.status}`);
-		const result = await response.json();
+		const result = await window.IBanking.paymentRequest('/api/v1/transactions/me');
 		const items = Array.isArray(result) ? result : result.items;
-		if (!Array.isArray(items)) throw new Error('Payment Service response must contain an items array.');
+		if (!Array.isArray(items)) throw new Error('Payment Service returned an invalid history response.');
 		if (!items.length) {
-			message.textContent = 'No transaction history.';
+			message.textContent = 'No transactions found.';
 			return;
 		}
 
 		for (const item of items) {
 			const row = document.createElement('tr');
-			for (const value of [formatDate(item.createdAt), item.transactionId, item.studentName || item.studentId, formatAmount(item.amount), item.status]) {
+			for (const value of [
+				item.transactionId,
+				item.studentId,
+				item.studentName,
+				item.sourceAccountNumber,
+				formatAmount(item.amount),
+				item.status,
+				formatDate(item.createdAt),
+				formatDate(item.completedAt)
+			]) {
 				const cell = document.createElement('td');
 				cell.textContent = value || '-';
 				row.append(cell);
@@ -38,8 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 		message.classList.add('hidden');
 		tableWrap.classList.remove('hidden');
 	} catch (error) {
-		console.error('Unable to load transaction history:', error);
-		message.textContent = 'Payment Service is unavailable. Transaction history will appear when its API is ready.';
+		message.textContent = error.message || 'Something went wrong. Please try again.';
 	}
 
 	function formatDate(value) {

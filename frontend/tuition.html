@@ -55,9 +55,31 @@
 			<div class="payment-summary"><div><span>Selected Account Balance</span><strong id="selected-account-balance">-</strong></div><div><span>Full Tuition Amount</span><strong id="selected-tuition-amount" class="tuition-amount">-</strong></div></div>
 			<p id="balance-message" class="tuition-inline-message" role="status"></p>
 			<label class="confirmation-check"><input id="confirm-details" type="checkbox"><span>I have reviewed the student and payment information above.</span></label>
-			<button id="confirm-payment" class="button" type="button" disabled>Confirm Payment</button>
-			<div id="payment-ready-message" class="tuition-message success-message hidden" role="status">Payment flow ready. Payment processing and OTP are not implemented yet.</div>
-			<p class="tuition-note">Confirmation here does not debit an account or mark tuition as paid.</p>
+			<button id="confirm-payment" class="button" type="button" disabled>Continue to OTP</button>
+			<p id="payment-action-message" class="tuition-inline-message" role="status"></p>
+			<section id="otp-section" class="otp-section hidden" aria-live="polite">
+				<h3>Verify payment</h3>
+				<p id="otp-delivery-message" class="muted">Enter the six-digit code sent to your registered email.</p>
+				<form id="otp-form" class="otp-form">
+					<label for="otp-code">One-time password</label>
+					<input id="otp-code" name="otpCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" aria-describedby="otp-error" required>
+					<button id="confirm-otp" class="button" type="submit">Confirm Payment</button>
+					<button id="resend-otp" class="button secondary-button" type="button">Resend OTP</button>
+				</form>
+				<p id="otp-error" class="form-error" role="alert"></p>
+			</section>
+			<section id="payment-success" class="payment-success hidden" aria-live="polite">
+				<h3>Payment successful</h3>
+				<div class="tuition-detail-grid">
+					<div class="tuition-detail"><span>Transaction ID</span><strong id="success-transaction-id"></strong></div>
+					<div class="tuition-detail"><span>Student</span><strong id="success-student"></strong></div>
+					<div class="tuition-detail"><span>Amount</span><strong id="success-amount"></strong></div>
+					<div class="tuition-detail"><span>Source Account</span><strong id="success-account"></strong></div>
+					<div class="tuition-detail"><span>Status</span><strong id="success-status"></strong></div>
+					<div class="tuition-detail"><span>Completed At</span><strong id="success-completed-at"></strong></div>
+				</div>
+				<a class="button history-button" href="history.html">View transaction history</a>
+			</section>
 		</section>
 	</main>
 	<footer class="site-footer"><div class="container footer-inner"><a class="brand" href="index.html">iBanking</a><span>TDTU Tuition Payment System</span></div></footer>

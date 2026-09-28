@@ -32,7 +32,8 @@ def get_my_accounts(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[AccountResponse]:
-    return get_user_accounts(db, user.user_id)
+    accounts = get_user_accounts(db, user.user_id)
+    return [AccountResponse.model_validate(account) for account in accounts]
 
 
 @internal_router.get(
@@ -40,8 +41,12 @@ def get_my_accounts(
     response_model=InternalAccountResponse,
     summary="Get an account for service-to-service use",
 )
-def get_account_for_service(account_number: str, db: Session = Depends(get_db)):
-    return get_internal_account(db, account_number)
+def get_account_for_service(
+    account_number: str,
+    db: Session = Depends(get_db),
+) -> InternalAccountResponse:
+    account = get_internal_account(db, account_number)
+    return InternalAccountResponse.model_validate(account)
 
 
 @internal_router.post(

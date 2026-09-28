@@ -1,3 +1,5 @@
+import json
+import logging
 import secrets
 import smtplib
 from datetime import datetime, timedelta
@@ -16,6 +18,9 @@ from backend.payment_service.config import (
 from backend.payment_service.models.otpModel import OtpModel
 from backend.payment_service.models.transactionModel import TransactionModel
 from backend.payment_service.services.email_service import send_otp_email
+
+
+logger = logging.getLogger(__name__)
 
 
 class PaymentService:
@@ -177,10 +182,303 @@ class PaymentService:
             "status": "PENDING",
         }
 
-    def confirm_payment(self, db_session, transaction_id, otp_code):
-        otp_record = OtpModel.verify(db_session, transaction_id, otp_code)
-        if not otp_record:
-            return {"success": False, "message": "OTP is invalid, expired, or already used"}
+    def confirm_payment(self, db_session, transaction_id, otp_code, payer_user_id):
+        transaction = TransactionModel.find_by_id(db_session, transaction_id)
+        if transaction is None:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        if transaction.payer_user_id != payer_user_id:
+            raise HTTPException(status_code=403, detail="Transaction does not belong to the authenticated user")
+        if transaction.status != "PENDING":
+            raise HTTPException(status_code=409, detail="Transaction is not pending")
 
-        OtpModel.mark_as_used(db_session, otp_record.otp_id)
-        return {"success": True, "message": "OTP verified; payment has not been processed"}
+        if not TransactionModel.claim_for_processing(db_session, transaction_id, payer_user_id):
+            raise HTTPException(status_code=409, detail="Transaction is already being processed")
+
+        try:
+            otp_record = OtpModel.verify(db_session, transaction_id, otp_code)
+        except Exception:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise
+        if not otp_record:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=400, detail="OTP is invalid, expired, or already used")
+
+        headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
+        student_id = transaction.student_id
+        try:
+            tuition_response = requests.get(
+                f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Tuition Service is unavailable",
+            ) from exc
+
+        if tuition_response.status_code == status.HTTP_404_NOT_FOUND:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=404, detail="Tuition information not found")
+        if tuition_response.status_code != status.HTTP_200_OK:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Tuition Service could not revalidate the tuition",
+            )
+
+        try:
+            tuition = tuition_response.json()
+        except (ValueError, TypeError) as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="Tuition Service returned invalid data") from exc
+        if not isinstance(tuition, dict):
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="Tuition Service returned invalid data")
+        if tuition.get("status") == "PAID":
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Tuition has already been paid")
+        if tuition.get("status") != "UNPAID":
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="Tuition Service returned an unsupported status")
+        try:
+            amount = Decimal(str(tuition["amount"]))
+        except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="Tuition Service returned an invalid amount") from exc
+        if not amount.is_finite() or amount <= 0:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="Tuition Service returned an invalid amount")
+
+        account_number = transaction.source_account_number
+        try:
+            account_response = requests.get(
+                f"{USER_SERVICE_URL}/api/v1/internal/accounts/{quote(account_number, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User Service is unavailable",
+            ) from exc
+
+        if account_response.status_code == status.HTTP_404_NOT_FOUND:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=404, detail="Account not found")
+        if account_response.status_code != status.HTTP_200_OK:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service could not revalidate the account",
+            )
+        try:
+            account = account_response.json()
+        except (ValueError, TypeError) as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="User Service returned invalid account data") from exc
+        if not isinstance(account, dict):
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="User Service returned invalid account data")
+        try:
+            account_owner_id = int(account.get("userId", account.get("user_id")))
+            balance = Decimal(str(account["balance"]))
+        except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=502, detail="User Service returned invalid account data") from exc
+        if account_owner_id != payer_user_id:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=403, detail="Account does not belong to the authenticated user")
+        if account.get("status") != "ACTIVE":
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Account is inactive")
+        if not balance.is_finite() or balance < amount:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Insufficient account balance")
+
+        claim_url = f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}/claim"
+        try:
+            claim_response = requests.post(
+                claim_url,
+                json={"transaction_id": transaction_id},
+                headers=headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Tuition Service is unavailable while claiming the tuition",
+            ) from exc
+        if claim_response.status_code == status.HTTP_404_NOT_FOUND:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=404, detail="Tuition information not found")
+        if claim_response.status_code == status.HTTP_409_CONFLICT:
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Tuition has already been claimed or paid")
+        if claim_response.status_code != status.HTTP_201_CREATED:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Tuition Service could not claim the tuition",
+            )
+        try:
+            otp_consumed = OtpModel.mark_as_used(db_session, otp_record.otp_id)
+        except Exception as exc:
+            logger.exception("Could not consume OTP for transaction %s", transaction_id)
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=503, detail="Could not safely consume OTP") from exc
+        if not otp_consumed:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=400, detail="OTP is invalid, expired, or already used")
+
+        debit_url = (
+            f"{USER_SERVICE_URL}/api/v1/internal/accounts/"
+            f"{quote(account_number, safe='')}/debit"
+        )
+        debit_payload = (
+            f'{{"amount":{format(amount, "f")},'
+            f'"transactionId":{json.dumps(transaction_id)}}}'
+        )
+        debit_headers = {**headers, "Content-Type": "application/json"}
+        try:
+            debit_response = requests.post(
+                debit_url,
+                data=debit_payload,
+                headers=debit_headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            logger.exception(
+                "Debit outcome is unknown for transaction %s; transaction requires reconciliation",
+                transaction_id,
+            )
+            self._mark_transaction_failed(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User Service debit outcome is unknown; transaction requires reconciliation",
+            ) from exc
+
+        if debit_response.status_code == status.HTTP_404_NOT_FOUND:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            self._mark_transaction_failed(db_session, transaction_id)
+            raise HTTPException(status_code=404, detail="Account not found")
+        if debit_response.status_code == status.HTTP_409_CONFLICT:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            self._mark_transaction_failed(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Account is inactive or has insufficient balance")
+        if debit_response.status_code != status.HTTP_200_OK:
+            logger.error(
+                "User Service returned HTTP %s while debiting transaction %s; transaction requires reconciliation",
+                debit_response.status_code,
+                transaction_id,
+            )
+            self._mark_transaction_failed(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service debit failed; transaction requires reconciliation",
+            )
+
+        tuition_pay_url = f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}/pay"
+        try:
+            tuition_pay_response = requests.put(
+                tuition_pay_url,
+                headers=headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            logger.exception(
+                "Partial payment: debit succeeded but Tuition Service update failed for transaction %s",
+                transaction_id,
+            )
+            self._mark_transaction_failed(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Debit succeeded but tuition update failed; transaction requires reconciliation",
+            ) from exc
+
+        if tuition_pay_response.status_code != status.HTTP_200_OK:
+            logger.error(
+                "Partial payment: debit succeeded but Tuition Service returned HTTP %s for transaction %s",
+                tuition_pay_response.status_code,
+                transaction_id,
+            )
+            self._mark_transaction_failed(db_session, transaction_id)
+            if tuition_pay_response.status_code in (404, 409):
+                raise HTTPException(
+                    status_code=tuition_pay_response.status_code,
+                    detail="Debit succeeded but tuition update failed; transaction requires reconciliation",
+                )
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Debit succeeded but tuition update failed; transaction requires reconciliation",
+            )
+
+        try:
+            saved_completed_at = TransactionModel.complete(
+                db_session,
+                transaction_id,
+                amount,
+            )
+        except Exception as exc:
+            logger.exception(
+                "Partial payment: debit and tuition update succeeded but transaction finalization failed for %s",
+                transaction_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Debit and tuition update succeeded but transaction could not be finalized",
+            ) from exc
+        if saved_completed_at is None:
+            logger.error(
+                "Payment side effects succeeded but transaction %s was no longer PENDING during finalization",
+                transaction_id,
+            )
+            raise HTTPException(status_code=409, detail="Transaction could not be finalized")
+
+        return {
+            "transaction_id": transaction_id,
+            "status": "SUCCESS",
+            "student_id": tuition.get("student_id", student_id),
+            "student_name": tuition.get("student_name", transaction.student_name),
+            "amount": amount,
+            "completed_at": saved_completed_at.isoformat(),
+        }
+
+    @staticmethod
+    def _release_tuition_claim(student_id, transaction_id, headers):
+        try:
+            response = requests.delete(
+                f"{TUITION_SERVICE_URL}/api/v1/tuition/"
+                f"{quote(student_id, safe='')}/claim/{quote(transaction_id, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+            if response.status_code != status.HTTP_200_OK:
+                logger.error(
+                    "Could not release tuition claim for transaction %s (HTTP %s)",
+                    transaction_id,
+                    response.status_code,
+                )
+        except requests.RequestException:
+            logger.exception("Could not release tuition claim for transaction %s", transaction_id)
+
+    @staticmethod
+    def _mark_transaction_failed(db_session, transaction_id):
+        try:
+            if not TransactionModel.update_status(db_session, transaction_id, "FAILED"):
+                logger.error(
+                    "Could not mark transaction %s FAILED after a possible debit",
+                    transaction_id,
+                )
+        except Exception:
+            logger.exception(
+                "Could not record failure for transaction %s after a possible debit",
+                transaction_id,
+            )

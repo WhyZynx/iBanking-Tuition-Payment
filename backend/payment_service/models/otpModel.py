@@ -9,7 +9,7 @@ class OtpModel:
             FROM otps
             WHERE otp_code = :code
               AND is_used = FALSE
-              AND expires_at > NOW()
+              AND expires_at > CURRENT_TIMESTAMP
             LIMIT 1
         """)
         return db_session.execute(query, {"code": otp_code}).fetchone() is not None
@@ -22,7 +22,7 @@ class OtpModel:
                 SET is_used = TRUE
                 WHERE transaction_id = :transaction_id
                   AND is_used = FALSE
-                  AND expires_at > NOW()
+                  AND expires_at > CURRENT_TIMESTAMP
             """),
             {"transaction_id": transaction_id},
         )
@@ -47,7 +47,7 @@ class OtpModel:
             WHERE transaction_id = :id
               AND otp_code = :code
               AND is_used = FALSE
-              AND expires_at > NOW()
+              AND expires_at > CURRENT_TIMESTAMP
             ORDER BY otp_id DESC
             LIMIT 1
         """)
@@ -58,6 +58,13 @@ class OtpModel:
 
     @staticmethod
     def mark_as_used(db_session, otp_id):
-        query = text("UPDATE otps SET is_used = TRUE WHERE otp_id = :id")
-        db_session.execute(query, {"id": otp_id})
+        query = text("""
+            UPDATE otps
+            SET is_used = TRUE
+            WHERE otp_id = :id
+              AND is_used = FALSE
+              AND expires_at > CURRENT_TIMESTAMP
+        """)
+        result = db_session.execute(query, {"id": otp_id})
         db_session.commit()
+        return result.rowcount == 1

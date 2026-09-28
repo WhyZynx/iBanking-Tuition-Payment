@@ -173,6 +173,17 @@ a.quick-card:hover { border-color: #b8c9da; transform: translateY(-1px); }
 .confirmation-check { display: flex; gap: 9px; align-items: flex-start; margin: 15px 0 12px; color: #626d79; font-size: 11px; line-height: 1.5; cursor: pointer; }
 .confirmation-check input { flex: 0 0 auto; margin-top: 2px; accent-color: var(--primary); }
 .tuition-note { margin: 9px 0 0; color: #89929d; font-size: 10px; line-height: 1.5; }
+.otp-section, .payment-success { margin-top: 20px; padding: 20px; border: 1px solid var(--border); border-radius: 9px; background: #f8fafc; }
+.otp-section h3, .payment-success h3 { margin-bottom: 7px; color: #263241; }
+.otp-section > p { font-size: 12px; }
+.otp-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+.otp-form label { flex-basis: 100%; color: #53606e; font-size: 12px; font-weight: 600; }
+.otp-form input { width: 180px; height: 44px; padding: 0 13px; border: 1px solid #d5dbe3; border-radius: 7px; font: inherit; font-size: 18px; letter-spacing: .25em; }
+.otp-form input:focus { outline: none; border-color: #6692bc; box-shadow: 0 0 0 3px #174a7e14; }
+.secondary-button { border: 1px solid var(--primary); background: white; color: var(--primary); }
+.secondary-button:hover:not(:disabled) { background: var(--primary-light); }
+.payment-success .tuition-detail-grid { margin-top: 15px; }
+.history-button { margin-top: 15px; }
 .tuition-page .hidden { display: none !important; }
 
 @media (max-width: 850px) {

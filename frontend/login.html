@@ -41,23 +41,29 @@
 				<button class="button" type="submit">Sign In</button>
 				<p id="login-error" class="form-error" role="alert"></p>
 			</form>
-			<p class="small-note">Demo account: <code>user01</code> / <code>123456</code></p>
 			<a class="back-home" href="index.html">&larr; Back to Home</a>
 		</section>
 	</main>
 	<footer class="site-footer"><div class="container footer-inner"><span class="brand">iBanking</span><span>TDTU Tuition Payment System</span></div></footer>
 	<script>
-		document.getElementById('login-form').addEventListener('submit', async event => {
-			event.preventDefault();
-			const form = event.currentTarget;
-			const errorBox = document.getElementById('login-error');
-			errorBox.textContent = '';
-			try {
-				await window.IBanking.login(form.username.value, form.password.value);
-				window.location.href = 'dashboard.html';
-			} catch (error) {
-				errorBox.textContent = error.message;
+		document.addEventListener('DOMContentLoaded', () => {
+			const priorAuthMessage = sessionStorage.getItem(window.IBanking.AUTH_MESSAGE_KEY);
+			if (priorAuthMessage) {
+				document.getElementById('login-error').textContent = priorAuthMessage;
+				sessionStorage.removeItem(window.IBanking.AUTH_MESSAGE_KEY);
 			}
+			document.getElementById('login-form').addEventListener('submit', async event => {
+				event.preventDefault();
+				const form = event.currentTarget;
+				const errorBox = document.getElementById('login-error');
+				errorBox.textContent = '';
+				try {
+					await window.IBanking.login(form.username.value, form.password.value);
+					window.location.href = 'dashboard.html';
+				} catch (error) {
+					errorBox.textContent = error.message;
+				}
+			});
 		});
 	</script>
 </body>

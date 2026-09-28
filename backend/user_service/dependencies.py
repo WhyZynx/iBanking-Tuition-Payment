@@ -22,10 +22,11 @@ def get_current_user(
         )
 
     payload = decode_access_token(credentials.credentials)
-    try:
-        user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject.isdecimal():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
+
+    user_id = int(subject)
 
     user = db.get(User, user_id)
     if user is None:

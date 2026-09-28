@@ -31,12 +31,31 @@ class FakeEmailResponse:
         return {"email": "payer@example.com"}
 
 
+class FakeEmailResponseWithTuitionStatus:
+    status_code = 200
+
+    def __init__(self, tuition_status):
+        self.tuition_status = tuition_status
+
+    def json(self):
+        return {
+            "student_id": "SV001",
+            "student_name": "Student",
+            "amount": "500.00",
+            "status": self.tuition_status,
+        }
+
+
 @pytest.fixture
 def otp_client(monkeypatch):
     session = OtpSession()
     transaction = SimpleNamespace(
         transaction_id=TRANSACTION_ID,
         payer_user_id=USER_ID,
+        source_account_number="1012345678",
+        student_id="SV001",
+        student_name="Student",
+        amount=500.00,
         status="PENDING",
     )
     records = []
@@ -45,6 +64,22 @@ def otp_client(monkeypatch):
 
     def find_transaction(_session, transaction_id):
         return transaction if transaction_id == TRANSACTION_ID else None
+
+    def claim_transaction(_session, transaction_id, payer_user_id):
+        if (
+            transaction_id != TRANSACTION_ID
+            or payer_user_id != USER_ID
+            or transaction.status != "PENDING"
+        ):
+            return False
+        transaction.status = "PROCESSING"
+        return True
+
+    def release_transaction(_session, transaction_id):
+        if transaction_id != TRANSACTION_ID or transaction.status != "PROCESSING":
+            return False
+        transaction.status = "PENDING"
+        return True
 
     def is_active_code(_session, code):
         now = datetime.now()
@@ -87,8 +122,12 @@ def otp_client(monkeypatch):
         for record in records:
             if record["id"] == otp_id:
                 record["used"] = True
+                return True
+        return False
 
     monkeypatch.setattr(paymentController.TransactionModel, "find_by_id", find_transaction)
+    monkeypatch.setattr(paymentController.TransactionModel, "claim_for_processing", claim_transaction)
+    monkeypatch.setattr(paymentController.TransactionModel, "release_processing", release_transaction)
     monkeypatch.setattr(otpModel.OtpModel, "is_active_code", is_active_code)
     monkeypatch.setattr(otpModel.OtpModel, "create", create_otp)
     monkeypatch.setattr(otpModel.OtpModel, "verify", verify_otp)
@@ -177,13 +216,8 @@ def test_requesting_otp_again_invalidates_the_previous_code(otp_client):
         headers=headers,
         json={"transactionId": TRANSACTION_ID, "otpCode": records[0]["code"]},
     )
-    new_confirm = client.post(
-        "/api/v1/payments/confirm",
-        headers=headers,
-        json={"transactionId": TRANSACTION_ID, "otpCode": records[1]["code"]},
-    )
     assert old_confirm.status_code == 400
-    assert new_confirm.status_code == 200
+    assert records[1]["used"] is False
 
 
 @pytest.mark.parametrize("invalid_kind", ["expired", "wrong", "used"])
@@ -194,7 +228,7 @@ def test_confirm_rejects_expired_wrong_or_used_otp_without_payment_actions(
     records.append({
         "id": 1,
         "transaction_id": TRANSACTION_ID,
-        "code": "123456" if invalid_kind != "wrong" else "654321",
+        "code": "729481" if invalid_kind != "wrong" else "654321",
         "expires_at": (
             datetime.now() - timedelta(seconds=1)
             if invalid_kind == "expired"
@@ -210,7 +244,7 @@ def test_confirm_rejects_expired_wrong_or_used_otp_without_payment_actions(
     response = client.post(
         "/api/v1/payments/confirm",
         headers=headers,
-        json={"transactionId": TRANSACTION_ID, "otpCode": "123456"},
+        json={"transactionId": TRANSACTION_ID, "otpCode": "729481"},
     )
 
     assert response.status_code == 400
@@ -220,7 +254,7 @@ def test_confirm_rejects_expired_wrong_or_used_otp_without_payment_actions(
     update_status.assert_not_called()
 
 
-def test_correct_otp_is_consumed_without_debit_or_success_status(otp_client, monkeypatch):
+def test_valid_otp_is_not_consumed_when_tuition_revalidation_fails(otp_client, monkeypatch):
     client, transaction, records, _, headers = otp_client
     client.post(f"/api/v1/payments/{TRANSACTION_ID}/otp", headers=headers)
     otp_code = records[0]["code"]
@@ -228,6 +262,11 @@ def test_correct_otp_is_consumed_without_debit_or_success_status(otp_client, mon
     monkeypatch.setattr(paymentService.requests, "post", debit)
     update_status = Mock(side_effect=AssertionError("STEP 5 must not update transaction status"))
     monkeypatch.setattr(paymentController.TransactionModel, "update_status", update_status)
+    monkeypatch.setattr(
+        paymentService.requests,
+        "get",
+        lambda *args, **kwargs: FakeEmailResponseWithTuitionStatus("PAID"),
+    )
 
     response = client.post(
         "/api/v1/payments/confirm",
@@ -235,9 +274,8 @@ def test_correct_otp_is_consumed_without_debit_or_success_status(otp_client, mon
         json={"transactionId": TRANSACTION_ID, "otpCode": otp_code},
     )
 
-    assert response.status_code == 200
-    assert "not been processed" in response.json()["message"]
-    assert records[0]["used"] is True
+    assert response.status_code == 409
+    assert records[0]["used"] is False
     assert transaction.status == "PENDING"
     debit.assert_not_called()
     update_status.assert_not_called()
@@ -261,7 +299,7 @@ def test_otp_verification_query_requires_unused_matching_unexpired_code():
     assert otpModel.OtpModel.verify(Session(), TRANSACTION_ID, "004821") is None
     assert "otp_code = :code" in captured["query"]
     assert "is_used = FALSE" in captured["query"]
-    assert "expires_at > NOW()" in captured["query"]
+    assert "expires_at > CURRENT_TIMESTAMP" in captured["query"]
     assert captured["params"] == {"id": TRANSACTION_ID, "code": "004821"}
 
 

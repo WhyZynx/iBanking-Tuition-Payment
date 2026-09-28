@@ -86,6 +86,12 @@ def request_otp(
     db_session: Session = Depends(get_db),
 ):
     get_pending_user_transaction(db_session, transaction_id, current_user_id)
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return payment_service.request_otp(
         db_session=db_session,
         transaction_id=transaction_id,
@@ -99,16 +105,12 @@ def confirm_payment(
     current_user_id: int = Depends(get_current_user_id),
     db_session: Session = Depends(get_db),
 ):
-    get_pending_user_transaction(db_session, request.transactionId, current_user_id)
-
-    result = payment_service.confirm_payment(
+    return payment_service.confirm_payment(
         db_session=db_session,
         transaction_id=request.transactionId,
         otp_code=request.otpCode,
+        payer_user_id=current_user_id,
     )
-    if not result["success"]:
-        raise HTTPException(status_code=400, detail=result["message"])
-    return {"message": result["message"]}
 
 
 @router.get("/api/v1/transactions/me")

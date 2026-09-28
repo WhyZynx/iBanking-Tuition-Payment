@@ -15,7 +15,7 @@
 	</div></nav>
 	<main class="container page-content">
 		<div class="page-heading"><p class="eyebrow">Payments</p><h1>Transaction History</h1><p class="muted">Payment records are provided by the Payment Service.</p></div>
-		<section class="card history-panel" aria-live="polite"><p id="history-message" class="history-message">Loading transaction history...</p><div id="history-table-wrap" class="history-table-wrap hidden"><table><thead><tr><th>Date</th><th>Transaction</th><th>Student</th><th>Amount</th><th>Status</th></tr></thead><tbody id="history-items"></tbody></table></div></section>
+		<section class="card history-panel" aria-live="polite"><p id="history-message" class="history-message">Loading transaction history...</p><div id="history-table-wrap" class="history-table-wrap hidden"><table><thead><tr><th>Transaction ID</th><th>Student ID</th><th>Student Name</th><th>Source Account</th><th>Amount</th><th>Status</th><th>Created At</th><th>Completed At</th></tr></thead><tbody id="history-items"></tbody></table></div></section>
 		<p class="small-note">History integration contract: <code>GET /api/v1/transactions/me</code> on the Payment Service.</p>
 	</main>
 	<footer class="site-footer"><div class="container footer-inner"><a class="brand" href="index.html">iBanking</a><span>TDTU Tuition Payment System</span></div></footer>

@@ -6,11 +6,20 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.tuition_service.controllers.tuition_controller import app
+from backend.tuition_service.controllers import tuition_controller
+
+app = tuition_controller.app
+TEST_INTERNAL_API_KEY = "test-internal-api-key"
+INTERNAL_API_HEADERS = {"X-Internal-API-Key": TEST_INTERNAL_API_KEY}
 
 
 @pytest.fixture
-def client():
+def client(monkeypatch):
+    monkeypatch.setattr(
+        tuition_controller,
+        "INTERNAL_API_KEY",
+        TEST_INTERNAL_API_KEY
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -150,7 +159,8 @@ def test_mark_tuition_as_paid(client):
         return_value=paid_tuition
     ):
         response = client.put(
-            "/api/v1/tuition/524H0104/pay"
+            "/api/v1/tuition/524H0104/pay",
+            headers=INTERNAL_API_HEADERS
         )
 
     assert response.status_code == 200
@@ -175,7 +185,8 @@ def test_mark_already_paid_tuition(client):
         return_value=connection
     ):
         response = client.put(
-            "/api/v1/tuition/524H0078/pay"
+            "/api/v1/tuition/524H0078/pay",
+            headers=INTERNAL_API_HEADERS
         )
 
     assert response.status_code == 409
@@ -195,7 +206,8 @@ def test_mark_missing_tuition_as_paid(client):
         return_value=connection
     ):
         response = client.put(
-            "/api/v1/tuition/524H9999/pay"
+            "/api/v1/tuition/524H9999/pay",
+            headers=INTERNAL_API_HEADERS
         )
 
     assert response.status_code == 404
@@ -204,7 +216,12 @@ def test_mark_missing_tuition_as_paid(client):
     }
 
 
-def test_concurrent_payment_status_allows_only_one_success():
+def test_concurrent_payment_status_allows_only_one_success(monkeypatch):
+    monkeypatch.setattr(
+        tuition_controller,
+        "INTERNAL_API_KEY",
+        TEST_INTERNAL_API_KEY
+    )
     state = {
         "paid": False
     }
@@ -249,7 +266,8 @@ def test_concurrent_payment_status_allows_only_one_success():
     def pay_once():
         with TestClient(app) as concurrent_client:
             return concurrent_client.put(
-                "/api/v1/tuition/524H0104/pay"
+                "/api/v1/tuition/524H0104/pay",
+                headers=INTERNAL_API_HEADERS
             ).status_code
 
     with patch(
@@ -268,3 +286,40 @@ def test_concurrent_payment_status_allows_only_one_success():
             )
 
     assert sorted(statuses) == [200, 409]
+
+
+def test_pay_tuition_without_internal_api_key_is_rejected(client):
+    response = client.put("/api/v1/tuition/524H0104/pay")
+
+    assert response.status_code == 401
+
+
+def test_pay_tuition_with_wrong_internal_api_key_is_rejected(client):
+    response = client.put(
+        "/api/v1/tuition/524H0104/pay",
+        headers={"X-Internal-API-Key": "wrong-key"}
+    )
+
+    assert response.status_code == 401
+
+
+def test_pay_tuition_with_valid_internal_api_key_runs_business_logic(client):
+    paid_tuition = {
+        "student_id": "524H0104",
+        "student_name": "Pham Ngoc Han",
+        "amount": Decimal("17300000.00"),
+        "status": "PAID"
+    }
+
+    with patch(
+        "backend.tuition_service.controllers.tuition_controller.mark_tuition_as_paid",
+        return_value=paid_tuition
+    ) as mark_paid:
+        response = client.put(
+            "/api/v1/tuition/524H0104/pay",
+            headers=INTERNAL_API_HEADERS
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "PAID"
+    mark_paid.assert_called_once_with("524H0104")

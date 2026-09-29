@@ -17,7 +17,6 @@ def get_tuition_connection() -> pymysql.connections.Connection:
     if (
         not parsed_url.hostname
         or not parsed_url.username
-        or not parsed_url.password
         or not database_name
     ):
         raise RuntimeError("Tuition Service DATABASE_URL is missing connection details")

@@ -124,7 +124,7 @@ a.quick-card:hover { border-color: #b8c9da; transform: translateY(-1px); }
 
 /* Tuition page components use the same portal palette and card system. */
 .tuition-page { max-width: 1000px; }
-.tuition-page .page-heading h1 { font-size: 27px; }
+.tuition-page .page-heading h1 { margin-bottom: 12px; font-size: clamp(29px, 4vw, 40px); font-weight: 650; letter-spacing: -.4px; }
 .tuition-section { margin-bottom: 18px; padding: 24px 27px; }
 .tuition-section-heading { display: flex; align-items: center; gap: 13px; margin-bottom: 21px; }
 .tuition-section-heading h2 { margin: 0 0 4px; color: #263241; font-size: 16px; }

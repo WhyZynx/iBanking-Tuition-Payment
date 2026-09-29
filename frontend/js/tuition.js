@@ -44,7 +44,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 	resendOtpButton.addEventListener('click', requestOtp);
 	otpForm.addEventListener('submit', confirmPayment);
 
-	if (pendingPayment) showOtpStep('A payment is waiting for OTP verification.');
+	if (pendingPayment) {
+		await cancelPendingOnRefresh();
+		pendingPayment = null;
+	}
+
 	await loadPayerAndAccounts();
 
 	async function loadPayerAndAccounts() {
@@ -322,7 +326,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 			});
 			renderSuccess(result);
 			sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
-		sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
+			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
 			pendingPayment = null;
 		} catch (error) {
 			otpError.textContent = error.message;
@@ -379,6 +383,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
 		}
 		return null;
+	}
+
+	async function cancelPendingOnRefresh() {
+		try {
+			await window.IBanking.paymentRequest('/api/v1/payments/cancel-pending', {
+				method: 'POST'
+			});
+		} catch (error) {
+			console.error('Could not cancel pending payment after refresh:', error);
+		} finally {
+			sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
+			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
+		}
 	}
 
 	function showServiceMessage(element, message) {

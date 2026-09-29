@@ -27,10 +27,10 @@
 		<section class="card tuition-section">
 			<div class="tuition-section-heading"><span class="step-number">2</span><div><h2>Who are you paying for?</h2><p>This is a payment choice, not a user role.</p></div></div>
 			<div class="payer-choice-group">
-				<label class="payer-choice"><input type="radio" name="payment-target" value="self"><span><strong>Pay for myself</strong><small>Student ID lookup is required until a User-to-Student mapping is available.</small></span></label>
-				<label class="payer-choice"><input type="radio" name="payment-target" value="other" checked><span><strong>Pay for another student</strong><small>Enter the student's ID below.</small></span></label>
+				<label class="payer-choice"><input id="payment-target-self" type="radio" name="payment-target" value="self"><span><strong>Pay for me</strong><small>Use the student ID linked to your profile.</small></span></label>
+				<label class="payer-choice"><input id="payment-target-other" type="radio" name="payment-target" value="other" checked><span><strong>Search tuition</strong><small>Enter a student's ID below.</small></span></label>
 			</div>
-			<p id="student-mapping-note" class="tuition-note hidden">A Student ID cannot be loaded automatically because the User Service has no User-to-Student mapping API yet. Enter a Student ID to continue.</p>
+			<p id="student-mapping-note" class="tuition-note hidden" role="status"></p>
 			<form id="tuition-search-form" class="student-search-form">
 				<label for="student-id">Student ID</label>
 				<div class="search-control"><input id="student-id" name="studentId" type="text" autocomplete="off" placeholder="Enter student ID" required><button class="button" id="search-button" type="submit">Search</button></div>

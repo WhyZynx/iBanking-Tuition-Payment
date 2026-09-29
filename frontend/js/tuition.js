@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	searchForm.addEventListener('submit', searchTuition);
 	document.querySelectorAll('input[name="payment-target"]').forEach(choice => {
 		choice.addEventListener('change', () => {
-			studentMappingNote.classList.toggle('hidden', choice.value !== 'self' || !choice.checked);
+			if (choice.checked) handlePaymentTargetChange(choice.value);
 		});
 	});
 	confirmDetails.addEventListener('change', updatePaymentState);
@@ -64,6 +64,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 			accountLoading.textContent = 'Payment accounts are unavailable.';
 		}
 		updatePaymentState();
+		if (getPaymentTarget() === 'self') await loadMyTuition();
+	}
+
+	function getPaymentTarget() {
+		return document.querySelector('input[name="payment-target"]:checked')?.value || 'other';
+	}
+
+	function handlePaymentTargetChange(target) {
+		clearTuitionSelection();
+		lookupMessage.textContent = '';
+		studentMappingNote.classList.add('hidden');
+		if (target === 'self') {
+			searchForm.classList.add('hidden');
+			studentIdInput.required = false;
+			if (!currentUser) {
+				studentMappingNote.textContent = 'Loading your profile and student ID...';
+				studentMappingNote.classList.remove('hidden');
+				return;
+			}
+			void loadMyTuition();
+			return;
+		}
+
+		searchForm.classList.remove('hidden');
+		studentIdInput.required = true;
+	}
+
+	async function loadMyTuition() {
+		if (!currentUser || !currentUser.student_id) {
+			studentMappingNote.textContent = 'There is no student ID linked to your profile. Please contact the service administrator.';
+			studentMappingNote.classList.remove('hidden');
+			return;
+		}
+		studentMappingNote.classList.add('hidden');
+		await lookupTuition(currentUser.student_id);
 	}
 
 	function renderPayer(user) {
@@ -139,21 +174,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 	async function searchTuition(event) {
 		event.preventDefault();
 		const studentId = studentIdInput.value.trim().toUpperCase();
-		lookupMessage.textContent = '';
-		tuitionServiceMessage.classList.add('hidden');
-		tuitionResult.classList.add('hidden');
-		paymentSection.classList.add('hidden');
-		selectedTuition = null;
-		confirmDetails.checked = false;
-		updatePaymentState();
-
 		if (!studentId) {
 			lookupMessage.textContent = 'Please enter a student ID.';
 			return;
 		}
+		await lookupTuition(studentId);
+	}
 
-		searchButton.disabled = true;
-		searchButton.textContent = 'Searching...';
+	async function lookupTuition(studentId) {
+		clearTuitionSelection();
+		lookupMessage.textContent = 'Looking up tuition information...';
+		tuitionServiceMessage.classList.add('hidden');
+		const isManualSearch = getPaymentTarget() === 'other';
+		if (isManualSearch) {
+			searchButton.disabled = true;
+			searchButton.textContent = 'Searching...';
+		}
 		try {
 			const tuition = await window.IBanking.tuitionRequest(`/api/v1/tuition/${encodeURIComponent(studentId)}`);
 			if (!tuition || !tuition.student_id || !tuition.student_name || tuition.amount == null || !tuition.status) {
@@ -164,9 +200,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 		} catch (error) {
 			lookupMessage.textContent = error.status === 404 ? 'Student tuition record not found.' : error.message;
 		} finally {
-			searchButton.disabled = false;
-			searchButton.textContent = 'Search';
+			if (isManualSearch) {
+				searchButton.disabled = false;
+				searchButton.textContent = 'Search';
+			}
 		}
+	}
+
+	function clearTuitionSelection() {
+		tuitionServiceMessage.classList.add('hidden');
+		tuitionResult.classList.add('hidden');
+		paymentSection.classList.add('hidden');
+		selectedTuition = null;
+		confirmDetails.checked = false;
+		updatePaymentState();
 	}
 
 	function renderTuition(tuition) {
@@ -312,6 +359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	function lockPaymentForm() {
 		studentIdInput.disabled = Boolean(pendingPayment);
 		searchButton.disabled = Boolean(pendingPayment);
+		document.querySelectorAll('input[name="payment-target"]').forEach(input => input.disabled = Boolean(pendingPayment));
 		confirmDetails.disabled = Boolean(pendingPayment);
 		document.querySelectorAll('input[name="payment-account"]').forEach(input => input.disabled = true);
 		createPaymentButton.disabled = true;

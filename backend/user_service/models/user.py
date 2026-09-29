@@ -19,5 +19,6 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     email: Mapped[str] = mapped_column(String(100), nullable=False)
+    student_id: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False)
     accounts: Mapped[list["Account"]] = relationship(back_populates="user")

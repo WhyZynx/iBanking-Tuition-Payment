@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
 	full_name VARCHAR(100) NOT NULL,
 	phone VARCHAR(20) NOT NULL,
 	email VARCHAR(100) NOT NULL,
+	student_id VARCHAR(20) NULL UNIQUE,
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -21,15 +22,18 @@ CREATE TABLE IF NOT EXISTS accounts (
 	CONSTRAINT fk_accounts_user FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 
-INSERT INTO users (username, password_hash, full_name, phone, email)
+INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
 VALUES (
 	'user01',
 	'$2b$12$PxWXN9r0ukABcgaalI/pEOwMnEOLN2R9bjZFCLOWNCstuW2r5huhG',
 	'Nguyen Van A',
 	'0901234567',
-	'user01@example.com'
+	'user01@example.com',
+	'524H0104'
 )
-ON DUPLICATE KEY UPDATE username = VALUES(username);
+ON DUPLICATE KEY UPDATE
+	username = VALUES(username),
+	student_id = COALESCE(users.student_id, VALUES(student_id));
 
 INSERT INTO accounts (account_number, user_id, balance, is_default, status)
 SELECT '1012345678', user_id, 15000000.00, TRUE, 'ACTIVE'

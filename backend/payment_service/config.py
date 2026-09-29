@@ -23,9 +23,13 @@ if not jwt_secret_key:
     raise RuntimeError("JWT_SECRET_KEY is not configured for Payment Service")
 JWT_SECRET_KEY: str = jwt_secret_key
 
-JWT_ALGORITHM = getenv("JWT_ALGORITHM", "HS256")
-SMTP_HOST = getenv("SMTP_HOST", "")
-SMTP_PORT = int(getenv("SMTP_PORT", "587"))
-SMTP_USERNAME = getenv("SMTP_USERNAME", "")
-SMTP_PASSWORD = getenv("SMTP_PASSWORD", "")
-SMTP_FROM_EMAIL = getenv("SMTP_FROM_EMAIL", "")
+JWT_ALGORITHM: str = getenv("JWT_ALGORITHM") or "HS256"
+
+
+SMTP_HOST = getenv("SMTP_HOST") or ""
+SMTP_USERNAME = getenv("SMTP_USERNAME") or ""
+SMTP_PASSWORD = getenv("SMTP_PASSWORD") or ""
+SMTP_FROM_EMAIL = getenv("SMTP_FROM_EMAIL") or ""
+
+smtp_port_value: str = getenv("SMTP_PORT") or "587"
+SMTP_PORT: int = int(smtp_port_value)

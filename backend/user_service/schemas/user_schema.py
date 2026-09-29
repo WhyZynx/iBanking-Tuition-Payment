@@ -9,3 +9,4 @@ class UserResponse(BaseModel):
     full_name: str = Field(serialization_alias="fullName")
     phone: str
     email: EmailStr
+    student_id: str | None

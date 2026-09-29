@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -13,6 +15,7 @@ from backend.payment_service.services.paymentService import PaymentService
 router = APIRouter()
 payment_service = PaymentService()
 bearer_scheme = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 class ConfirmPaymentRequest(BaseModel):
@@ -92,6 +95,11 @@ def request_otp(
             detail="Authentication required",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    logger.info(
+        "OTP request validated for owned pending transaction %s and user %s",
+        transaction_id,
+        current_user_id,
+    )
     return payment_service.request_otp(
         db_session=db_session,
         transaction_id=transaction_id,

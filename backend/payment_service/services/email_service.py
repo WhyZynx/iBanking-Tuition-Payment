@@ -1,3 +1,4 @@
+import logging
 import smtplib
 from email.message import EmailMessage
 
@@ -9,10 +10,24 @@ from backend.payment_service.config import (
     SMTP_USERNAME,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def send_otp_email(recipient, transaction_id, otp_code, expires_at):
-    if not SMTP_HOST or not SMTP_FROM_EMAIL:
-        raise RuntimeError("SMTP_HOST and SMTP_FROM_EMAIL must be configured")
+    if not all((SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, SMTP_FROM_EMAIL)):
+        raise RuntimeError(
+            "SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, and SMTP_FROM_EMAIL must be configured"
+        )
+
+    local_part, separator, domain = recipient.partition("@")
+    safe_recipient = f"{local_part[:1]}***@{domain}" if separator else "***"
+    logger.info(
+        "OTP email send started: recipient=%s host=%s port=%s transaction_id=%s",
+        safe_recipient,
+        SMTP_HOST,
+        SMTP_PORT,
+        transaction_id,
+    )
 
     message = EmailMessage()
     message["Subject"] = "iBanking - OTP Verification"
@@ -26,6 +41,12 @@ def send_otp_email(recipient, transaction_id, otp_code, expires_at):
 
     with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
         server.starttls()
-        if SMTP_USERNAME:
-            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        logger.info("SMTP STARTTLS succeeded for host=%s port=%s", SMTP_HOST, SMTP_PORT)
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        logger.info("SMTP authentication succeeded for configured sender")
         server.send_message(message)
+        logger.info(
+            "OTP email send succeeded: recipient=%s transaction_id=%s",
+            safe_recipient,
+            transaction_id,
+        )

@@ -29,6 +29,7 @@ def reset_database():
         full_name="Nguyen Van A",
         phone="0901234567",
         email="user01@example.com",
+        student_id="524H0104",
     )
     db.add(user)
     db.flush()
@@ -69,6 +70,7 @@ def test_login_and_profile(client: TestClient):
         "fullName": "Nguyen Van A",
         "phone": "0901234567",
         "email": "user01@example.com",
+        "student_id": "524H0104",
     }
     assert "password" not in response.text
     assert "password_hash" not in response.text

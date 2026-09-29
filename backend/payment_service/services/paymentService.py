@@ -63,13 +63,22 @@ class PaymentService:
 
         expires_at = datetime.now() + timedelta(minutes=5)
         otp_id = OtpModel.create(db_session, transaction_id, otp_code, expires_at)
+        logger.info("OTP generated and stored for transaction %s (otp_id=%s)", transaction_id, otp_id)
         try:
             send_otp_email(email, transaction_id, otp_code, expires_at)
-        except (OSError, RuntimeError, smtplib.SMTPException) as exc:
+        except smtplib.SMTPAuthenticationError as exc:
+            logger.exception("SMTP authentication failed while sending OTP for transaction %s", transaction_id)
             OtpModel.mark_as_used(db_session, otp_id)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Unable to send OTP email",
+                detail="SMTP authentication failed; check the Payment Service SMTP username and password",
+            ) from exc
+        except (OSError, RuntimeError, smtplib.SMTPException) as exc:
+            logger.exception("Could not send OTP email for transaction %s", transaction_id)
+            OtpModel.mark_as_used(db_session, otp_id)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="OTP email could not be sent; check Payment Service SMTP configuration and connectivity",
             ) from exc
 
         return {"message": "OTP sent to the registered email address", "expires_in_seconds": 300}
@@ -282,12 +291,23 @@ class PaymentService:
         if not isinstance(account, dict):
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=502, detail="User Service returned invalid account data")
+        
+        account_owner_raw = account.get("userId")
+        if account_owner_raw is None:
+            account_owner_raw = account.get("user_id")
+
         try:
-            account_owner_id = int(account.get("userId", account.get("user_id")))
+            if account_owner_raw is None:
+                raise ValueError("Missing account owner ID")
+
+            account_owner_id = int(account_owner_raw)
             balance = Decimal(str(account["balance"]))
         except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
             TransactionModel.release_processing(db_session, transaction_id)
-            raise HTTPException(status_code=502, detail="User Service returned invalid account data") from exc
+            raise HTTPException(
+                status_code=502,
+                detail="User Service returned invalid account data",) from exc
+        
         if account_owner_id != payer_user_id:
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=403, detail="Account does not belong to the authenticated user")

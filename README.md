@@ -64,7 +64,7 @@ The local MySQL server must be running. SMTP credentials are needed for OTP emai
 
 Run these scripts in order from MySQL Workbench or a MySQL client:
 
-1. `db/user/init.sql` creates `account_db`, its user/account tables, and demo records.
+1. `db/user/init.sql` creates `account_db`, its user/account tables, and demo records. For an existing Account DB, apply `db/user/add_user_student_id.sql` once to add the optional user-to-student mapping and map the demo user if it has no mapping yet.
 2. `db/tuition/tuition.sql` creates `ibanking_tuition`, tuition bills, and the payment-claim table for new databases.
 3. `db/tuition/tuition_payment_claims.sql` is an idempotent setup script. Apply it to an existing Tuition database if the claim table is missing.
 4. `db/payment/payment_init.sql` creates `payment_db`, transactions, and OTPs.
@@ -128,6 +128,8 @@ Open <http://localhost:5500>. Health endpoints are `/health` on ports 8001, 8002
 | `GET` | `/api/v1/internal/accounts/{account_number}` | Internal API key |
 | `POST` | `/api/v1/internal/accounts/{account_number}/debit` | Internal API key |
 
+`GET /api/v1/users/me` retains its existing `userId` field and includes nullable `student_id` for the logged-in user's own student record.
+
 ### Tuition Service (`:8002`)
 
 | Method | Endpoint | Access |
@@ -159,7 +161,7 @@ Login → look up tuition → select account → create PENDING transaction
 → debit account → mark tuition PAID → transaction SUCCESS → history
 ```
 
-The browser submits only the student ID and source account number when creating payment. Payment Service obtains the authoritative tuition amount from Tuition Service and derives the payer ID from the JWT.
+The **Pay for me** choice loads `student_id` from the current user's profile and hides manual search. **Search tuition** remains available for another student. The browser submits only the student ID and source account number when creating payment. Payment Service obtains the authoritative tuition amount from Tuition Service and derives the payer ID from the JWT.
 
 ## Security and concurrency
 

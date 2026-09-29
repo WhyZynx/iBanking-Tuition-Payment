@@ -6,3 +6,4 @@ __pycache__/
 .pytest_cache/
 .pytest_tmp/
 .pytest_cache/
+__init__.py

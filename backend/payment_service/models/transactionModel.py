@@ -47,16 +47,55 @@ class TransactionModel:
         """)
         return db_session.execute(
             query,
-            {"user_id": payer_user_id, "student_id": student_id},
+            {
+                "user_id": payer_user_id,
+                "student_id": student_id,
+            },
         ).fetchone()
+
+    @staticmethod
+    def fail_pending_by_user_id(db_session, payer_user_id):
+        query = text("""
+            UPDATE transactions
+            SET status = 'FAILED',
+                completed_at = CURRENT_TIMESTAMP
+            WHERE payer_user_id = :user_id
+              AND status = 'PENDING'
+        """)
+        result = db_session.execute(
+            query,
+            {"user_id": payer_user_id},
+        )
+        db_session.commit()
+        return result.rowcount
+
+    @staticmethod
+    def fail_expired_pending(db_session):
+        query = text("""
+            UPDATE transactions
+            SET status = 'FAILED',
+                completed_at = CURRENT_TIMESTAMP
+            WHERE status = 'PENDING'
+              AND created_at < NOW() - INTERVAL 5 MINUTE
+        """)
+        result = db_session.execute(query)
+        db_session.commit()
+        return result.rowcount
 
     @staticmethod
     def update_status(db_session, transaction_id, status):
         query = text(
-            "UPDATE transactions SET status = :status, completed_at = CURRENT_TIMESTAMP "
+            "UPDATE transactions "
+            "SET status = :status, completed_at = CURRENT_TIMESTAMP "
             "WHERE transaction_id = :id AND status = 'PROCESSING'"
         )
-        result = db_session.execute(query, {"status": status, "id": transaction_id})
+        result = db_session.execute(
+            query,
+            {
+                "status": status,
+                "id": transaction_id,
+            },
+        )
         db_session.commit()
         return result.rowcount == 1
 
@@ -70,7 +109,10 @@ class TransactionModel:
                   AND payer_user_id = :user_id
                   AND status = 'PENDING'
             """),
-            {"id": transaction_id, "user_id": payer_user_id},
+            {
+                "id": transaction_id,
+                "user_id": payer_user_id,
+            },
         )
         db_session.commit()
         return result.rowcount == 1
@@ -94,8 +136,11 @@ class TransactionModel:
         completed_at = datetime.now()
         query = text("""
             UPDATE transactions
-            SET amount = :amount, status = 'SUCCESS', completed_at = :completed_at
-            WHERE transaction_id = :id AND status = 'PROCESSING'
+            SET amount = :amount,
+                status = 'SUCCESS',
+                completed_at = :completed_at
+            WHERE transaction_id = :id
+              AND status = 'PROCESSING'
         """)
         result = db_session.execute(
             query,
@@ -106,25 +151,45 @@ class TransactionModel:
             },
         )
         db_session.commit()
+
         if result.rowcount != 1:
             return None
+
         return completed_at
 
     @staticmethod
     def find_by_id(db_session, transaction_id):
-        query = text("SELECT * FROM transactions WHERE transaction_id = :id")
-        return db_session.execute(query, {"id": transaction_id}).fetchone()
+        query = text(
+            "SELECT * FROM transactions WHERE transaction_id = :id"
+        )
+        return db_session.execute(
+            query,
+            {"id": transaction_id},
+        ).fetchone()
 
     @staticmethod
     def find_by_user_id(db_session, user_id):
+        TransactionModel.fail_expired_pending(db_session)
+
         query = text("""
-            SELECT transaction_id, student_id, student_name, source_account_number,
-                   amount, status, created_at, completed_at
+            SELECT transaction_id,
+                   student_id,
+                   student_name,
+                   source_account_number,
+                   amount,
+                   status,
+                   created_at,
+                   completed_at
             FROM transactions
             WHERE payer_user_id = :user_id
             ORDER BY created_at DESC
         """)
-        results = db_session.execute(query, {"user_id": user_id}).fetchall()
+
+        results = db_session.execute(
+            query,
+            {"user_id": user_id},
+        ).fetchall()
+
         return [
             {
                 "transactionId": row[0],

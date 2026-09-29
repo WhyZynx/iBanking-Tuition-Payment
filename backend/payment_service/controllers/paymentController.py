@@ -73,6 +73,8 @@ def create_payment(
     current_user_id: int = Depends(get_current_user_id),
     db_session: Session = Depends(get_db),
 ):
+    TransactionModel.fail_expired_pending(db_session)
+
     return payment_service.create_payment(
         db_session=db_session,
         payer_user_id=current_user_id,
@@ -120,6 +122,21 @@ def confirm_payment(
         payer_user_id=current_user_id,
     )
 
+
+@router.post("/api/v1/payments/cancel-pending")
+def cancel_pending_payments(
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    count = TransactionModel.fail_pending_by_user_id(
+        db_session,
+        current_user_id,
+    )
+
+    return {
+        "message": "Pending transactions cancelled",
+        "count": count,
+    }
 
 @router.get("/api/v1/transactions/me")
 def get_transaction_history(

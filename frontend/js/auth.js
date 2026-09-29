@@ -27,31 +27,72 @@
 
 	async function request(baseUrl, path, options = {}) {
 		const token = sessionStorage.getItem(TOKEN_KEY);
-		const headers = { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) };
-		if (token) headers.Authorization = `Bearer ${token}`;
+
+		const headers = {
+			...(options.body ? { 'Content-Type': 'application/json' } : {}),
+			...(options.headers || {})
+		};
+
+		if (token) {
+			headers.Authorization = `Bearer ${token}`;
+		}
 
 		let response;
+
 		try {
-			response = await fetch(`${baseUrl}${path}`, { ...options, headers });
+			response = await fetch(`${baseUrl}${path}`, {
+				...options,
+				headers
+			});
 		} catch (_error) {
-			throw new ApiError(0, 'A service could not be reached. Check that the backend is running and try again.');
+			throw new ApiError(
+				0,
+				'A service could not be reached. Check that the backend is running and try again.'
+			);
 		}
 
 		const data = await response.json().catch(() => ({}));
+
 		if (!response.ok) {
 			if (response.status === 401 && token) {
-				sessionStorage.setItem(AUTH_MESSAGE_KEY, errorMessage(401));
+				sessionStorage.setItem(
+					AUTH_MESSAGE_KEY,
+					errorMessage(401)
+				);
+
+				await failPendingTransactions();
+
 				sessionStorage.removeItem(TOKEN_KEY);
-				if (isProtectedPage()) window.location.replace('login.html');
+
+				if (isProtectedPage()) {
+					window.location.replace('login.html');
+				}
 			}
-			const detail = typeof data.detail === 'string' ? data.detail : '';
-			throw new ApiError(response.status, errorMessage(response.status, detail));
+
+			const detail =
+				typeof data.detail === 'string'
+					? data.detail
+					: '';
+
+			throw new ApiError(
+				response.status,
+				errorMessage(response.status, detail)
+			);
 		}
+
 		return data;
 	}
 
 	function isProtectedPage() {
-		return ['dashboard.html', 'profile.html', 'accounts.html', 'tuition.html', 'history.html'].includes(window.location.pathname.split('/').pop());
+		return [
+			'dashboard.html',
+			'profile.html',
+			'accounts.html',
+			'tuition.html',
+			'history.html'
+		].includes(
+			window.location.pathname.split('/').pop()
+		);
 	}
 
 	function requireAuthentication() {
@@ -59,44 +100,153 @@
 			window.location.replace('login.html');
 			return false;
 		}
+
 		document.body.classList.remove('auth-pending');
 		return true;
 	}
 
 	async function login(username, password) {
 		try {
-			const result = await request(API_BASE_URL, '/api/v1/auth/login', {
-				method: 'POST',
-				body: JSON.stringify({ username, password })
-			});
-			sessionStorage.setItem(TOKEN_KEY, result.access_token);
+			const result = await request(
+				API_BASE_URL,
+				'/api/v1/auth/login',
+				{
+					method: 'POST',
+					body: JSON.stringify({
+						username,
+						password
+					})
+				}
+			);
+
+			sessionStorage.setItem(
+				TOKEN_KEY,
+				result.access_token
+			);
+
 			return result;
 		} catch (error) {
-			if (error.status === 401) throw new ApiError(401, 'Invalid username or password.');
+			if (error.status === 401) {
+				throw new ApiError(
+					401,
+					'Invalid username or password.'
+				);
+			}
+
 			throw error;
 		}
 	}
 
-	function logout() {
+	async function failPendingTransactions() {
+		const token = sessionStorage.getItem(TOKEN_KEY);
+
+		if (!token) {
+			return;
+		}
+
+		try {
+			await fetch(
+				`${PAYMENT_API_URL}/api/v1/payments/cancel-pending`,
+				{
+					method: 'POST',
+					headers: {
+						'Authorization': `Bearer ${token}`
+					}
+				}
+			);
+		} catch (error) {
+			console.error(
+				'Could not fail pending transactions:',
+				error
+			);
+		}
+	}
+
+	function failPendingTransactionsOnExit() {
+		const token = sessionStorage.getItem(TOKEN_KEY);
+
+		if (!token) {
+			return;
+		}
+
+		fetch(
+			`${PAYMENT_API_URL}/api/v1/payments/cancel-pending`,
+			{
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${token}`
+				},
+				keepalive: true
+			}
+		).catch(() => { });
+	}
+
+	async function logout() {
+		await failPendingTransactions();
+
 		sessionStorage.removeItem(TOKEN_KEY);
 		sessionStorage.removeItem(PENDING_TRANSACTION_KEY);
 		sessionStorage.removeItem(PENDING_CONTEXT_KEY);
 		sessionStorage.removeItem(AUTH_MESSAGE_KEY);
+
 		window.location.href = 'login.html';
 	}
 
 	function updateNavigation() {
-		const isLoggedIn = Boolean(sessionStorage.getItem(TOKEN_KEY));
-		document.querySelectorAll('.logged-in-only').forEach(item => item.classList.toggle('hidden', !isLoggedIn));
-		document.querySelectorAll('.logged-out-only').forEach(item => item.classList.toggle('hidden', isLoggedIn));
-		document.querySelectorAll('.public-home-link').forEach(item => item.classList.toggle('hidden', isLoggedIn));
-		document.querySelectorAll('[data-logout]').forEach(item => item.addEventListener('click', event => {
-			event.preventDefault();
-			logout();
-		}));
+		const isLoggedIn = Boolean(
+			sessionStorage.getItem(TOKEN_KEY)
+		);
+
+		document
+			.querySelectorAll('.logged-in-only')
+			.forEach(item =>
+				item.classList.toggle(
+					'hidden',
+					!isLoggedIn
+				)
+			);
+
+		document
+			.querySelectorAll('.logged-out-only')
+			.forEach(item =>
+				item.classList.toggle(
+					'hidden',
+					isLoggedIn
+				)
+			);
+
+		document
+			.querySelectorAll('.public-home-link')
+			.forEach(item =>
+				item.classList.toggle(
+					'hidden',
+					isLoggedIn
+				)
+			);
+
+		document
+			.querySelectorAll('[data-logout]')
+			.forEach(item =>
+				item.addEventListener(
+					'click',
+					event => {
+						event.preventDefault();
+						logout();
+					}
+				)
+			);
 	}
 
-	document.addEventListener('DOMContentLoaded', updateNavigation);
+	window.addEventListener(
+		'pagehide',
+		failPendingTransactionsOnExit
+	);
+
+	document.addEventListener(
+		'DOMContentLoaded',
+		updateNavigation
+	);
+
 	window.IBanking = {
 		API_BASE_URL,
 		TUITION_API_URL,
@@ -106,9 +256,12 @@
 		PENDING_CONTEXT_KEY,
 		AUTH_MESSAGE_KEY,
 		ApiError,
-		apiRequest: (path, options) => request(API_BASE_URL, path, options),
-		paymentRequest: (path, options) => request(PAYMENT_API_URL, path, options),
-		tuitionRequest: (path, options) => request('http://localhost:8002', path, options),
+		apiRequest: (path, options) =>
+			request(API_BASE_URL, path, options),
+		paymentRequest: (path, options) =>
+			request(PAYMENT_API_URL, path, options),
+		tuitionRequest: (path, options) =>
+			request('http://localhost:8002', path, options),
 		login,
 		logout,
 		requireAuthentication

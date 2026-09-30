@@ -112,6 +112,7 @@ def request_otp(
 @router.post("/api/v1/payments/confirm")
 def confirm_payment(
     request: ConfirmPaymentRequest,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     current_user_id: int = Depends(get_current_user_id),
     db_session: Session = Depends(get_db),
 ):
@@ -120,6 +121,7 @@ def confirm_payment(
         transaction_id=request.transactionId,
         otp_code=request.otpCode,
         payer_user_id=current_user_id,
+        access_token=credentials.credentials,
     )
 
 

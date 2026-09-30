@@ -17,8 +17,10 @@ from backend.payment_service.config import (
 )
 from backend.payment_service.models.otpModel import OtpModel
 from backend.payment_service.models.transactionModel import TransactionModel
-from backend.payment_service.services.email_service import send_otp_email
-
+from backend.payment_service.services.email_service import (
+    send_otp_email,
+    send_payment_success_email,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +193,7 @@ class PaymentService:
             "status": "PENDING",
         }
 
-    def confirm_payment(self, db_session, transaction_id, otp_code, payer_user_id):
+    def confirm_payment(self,db_session,transaction_id,otp_code,payer_user_id,access_token,):
         transaction = TransactionModel.find_by_id(db_session, transaction_id)
         if transaction is None:
             raise HTTPException(status_code=404, detail="Transaction not found")
@@ -445,7 +447,7 @@ class PaymentService:
                 db_session,
                 transaction_id,
                 amount,
-            )
+        )
         except Exception as exc:
             logger.exception(
                 "Partial payment: debit and tuition update succeeded but transaction finalization failed for %s",
@@ -455,18 +457,67 @@ class PaymentService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Debit and tuition update succeeded but transaction could not be finalized",
             ) from exc
+
         if saved_completed_at is None:
             logger.error(
                 "Payment side effects succeeded but transaction %s was no longer PENDING during finalization",
                 transaction_id,
             )
-            raise HTTPException(status_code=409, detail="Transaction could not be finalized")
+            raise HTTPException(
+                status_code=409,
+                detail="Transaction could not be finalized",
+            )
+
+        try:
+            user_response = requests.get(
+                f"{USER_SERVICE_URL}/api/v1/users/me",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=5,
+            )
+
+            if user_response.status_code == status.HTTP_200_OK:
+                user_data = user_response.json()
+                email = user_data.get("email")
+
+                if email:
+                    send_payment_success_email(
+                        email=email,
+                        transaction_id=transaction_id,
+                        student_id=tuition.get("student_id", student_id),
+                        student_name=tuition.get(
+                            "student_name",
+                            transaction.student_name,
+                        ),
+                        amount=amount,
+                        account_number=account_number,
+                        completed_at=saved_completed_at,
+                    )
+                else:
+                    logger.error(
+                        "Payment succeeded but user email is missing for transaction %s",
+                        transaction_id,
+                    )
+            else:
+                logger.error(
+                    "Payment succeeded but User Service returned HTTP %s while retrieving email for transaction %s",
+                    user_response.status_code,
+                    transaction_id,
+                )
+
+        except Exception:
+            logger.exception(
+                "Payment succeeded but confirmation email could not be sent for transaction %s",
+                transaction_id,
+            )
 
         return {
             "transaction_id": transaction_id,
             "status": "SUCCESS",
             "student_id": tuition.get("student_id", student_id),
-            "student_name": tuition.get("student_name", transaction.student_name),
+            "student_name": tuition.get(
+                "student_name",
+                transaction.student_name,
+            ),
             "amount": amount,
             "completed_at": saved_completed_at.isoformat(),
         }

@@ -38,8 +38,9 @@ class FakeResponse:
 
 
 class FakeResult:
-    def __init__(self, row=None):
+    def __init__(self, row=None, rowcount=0):
         self.row = row
+        self.rowcount = rowcount
 
     def fetchone(self):
         return self.row
@@ -51,7 +52,7 @@ class FakeSession:
         self.statements = []
         self.commits = 0
 
-    def execute(self, query, parameters):
+    def execute(self, query, parameters=None):
         self.statements.append((str(query), parameters))
         if "SELECT transaction_id" in str(query):
             return FakeResult(self.pending)
@@ -135,7 +136,7 @@ def test_payment_creation_persists_pending_transaction_with_authoritative_amount
     assert body["student_name"] == "Nguyen Van B"
     assert Decimal(str(body["amount"])) == Decimal("5000000.25")
     assert body["status"] == "PENDING"
-    assert session.commits == 1
+    assert session.commits == 2
 
     insert_query, inserted = session.statements[-1]
     assert "'PENDING'" in insert_query
@@ -205,4 +206,4 @@ def test_payment_creation_rejects_duplicate_pending_transaction(setup_client, mo
     response = request_payment(client)
     assert response.status_code == 409
     assert response.json()["detail"] == "A pending payment already exists for this student."
-    assert session.commits == 0
+    assert session.commits == 1

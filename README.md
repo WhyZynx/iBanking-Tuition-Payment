@@ -69,6 +69,7 @@ Run these scripts in order from MySQL Workbench or a MySQL client:
 3. `db/tuition/tuition_payment_claims.sql` is an idempotent setup script. Apply it to an existing Tuition database if the claim table is missing.
 4. `db/payment/payment_init.sql` creates `payment_db`, transactions, and OTPs.
 5. `db/payment/payment_add_student_name.sql` is only for an existing Payment database whose `transactions` table does not yet have `student_name`; do not rerun the `ALTER TABLE` after the column exists.
+6. `db/payment/payment_reconciliation_status.sql` expands the transaction status column for an existing Payment database.
 
 Database ownership is fixed: User Service → `account_db`; Tuition Service → `ibanking_tuition`; Payment Service → `payment_db`. Do not point a service at another service's database. The SQL seed includes the user `user01`, accounts `1012345678` and `1012345679`, and tuition records including `524H0104`. The seeded password is stored only as a bcrypt hash in SQL; use the password supplied for your local demo setup.
 
@@ -203,4 +204,4 @@ git diff --check
 
 ## Known limitations
 
-Services communicate synchronously over REST; there is no distributed transaction coordinator or automatic refund. If account debit succeeds but Tuition update or Payment finalization fails, manual reconciliation may be required. A process crash can also leave a transaction `PROCESSING` or a Tuition claim that needs recovery; claims do not expire automatically. Payment Service sends OTP email directly; there is no Notification Service.
+Services communicate synchronously over REST; there is no distributed transaction coordinator or automatic refund. If the debit result is unknown, or account debit succeeds but Tuition update or Payment finalization fails, Payment records `RECONCILIATION_REQUIRED` for manual follow-up. A process crash can still leave a transaction `PROCESSING` or a Tuition claim that needs recovery; claims do not expire automatically. Payment Service sends OTP email directly; there is no Notification Service.

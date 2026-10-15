@@ -1,3 +1,5 @@
+﻿import hmac
+
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -15,7 +17,7 @@ from backend.user_service.services.account_service import debit_account, get_int
 
 
 def require_internal_api_key(x_internal_api_key: str | None = Header(default=None)) -> None:
-    if x_internal_api_key != INTERNAL_API_KEY:
+    if not hmac.compare_digest(x_internal_api_key or "", INTERNAL_API_KEY):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal API key")
 
 

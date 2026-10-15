@@ -1,7 +1,6 @@
-import os
+﻿import os
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
-from pathlib import Path
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_user_service.db"
 os.environ["JWT_SECRET_KEY"] = "test-secret"
@@ -12,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from backend.user_service.database import Base, SessionLocal, engine
 from backend.user_service.main import app
-from backend.user_service.models import Account, User
+from backend.user_service.models import Account, AccountDebit, User
 from backend.user_service.security import hash_password
 
 TEST_LOGIN_PASSWORD = "test-user-login-only"
@@ -45,7 +44,6 @@ def reset_database():
     yield
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
-    Path("test_user_service.db").unlink(missing_ok=True)
 
 
 @pytest.fixture
@@ -81,6 +79,20 @@ def test_invalid_login_and_missing_token(client: TestClient):
     assert client.post("/api/v1/auth/login", json={"username": "missing", "password": TEST_LOGIN_PASSWORD}).status_code == 401
     assert client.get("/api/v1/users/me").status_code == 401
     assert client.get("/api/v1/users/me", headers={"Authorization": "Bearer invalid-token"}).status_code == 401
+
+
+def test_expired_jwt_is_rejected(client: TestClient):
+    from datetime import datetime, timedelta, timezone
+
+    from jose import jwt
+
+    token = jwt.encode(
+        {"sub": "1", "exp": datetime.now(timezone.utc) - timedelta(minutes=1)},
+        "test-secret",
+        algorithm="HS256",
+    )
+    response = client.get("/api/v1/users/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
 
 
 def test_accounts_are_scoped_to_current_user(client: TestClient):
@@ -120,12 +132,108 @@ def test_internal_lookup_and_debit(client: TestClient):
     assert debit.json() == {"success": True, "accountNumber": "1012345678", "remainingBalance": 6500000}
 
 
+def test_internal_key_rejects_missing_and_invalid_values(client: TestClient):
+    for headers in ({}, {"X-Internal-API-Key": "wrong-key"}):
+        response = client.get("/api/v1/internal/accounts/1012345678", headers=headers)
+        assert response.status_code == 401
+
+    valid = client.get(
+        "/api/v1/internal/accounts/1012345678",
+        headers={"X-Internal-API-Key": "test-internal-key"},
+    )
+    missing_account = client.get(
+        "/api/v1/internal/accounts/missing",
+        headers={"X-Internal-API-Key": "test-internal-key"},
+    )
+    assert valid.status_code == 200
+    assert missing_account.status_code == 404
+
+
+def test_duplicate_debit_returns_original_result_without_debiting_again(client: TestClient):
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+    payload = {"amount": "5000000.00", "transactionId": "RETRY-001"}
+
+    first = client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json=payload)
+    retry = client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json=payload)
+
+    assert first.status_code == retry.status_code == 200
+    assert first.json() == retry.json()
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    debit_records = db.query(AccountDebit).filter_by(transaction_id="RETRY-001").all()
+    assert account.balance == Decimal("10000000")
+    assert len(debit_records) == 1
+    db.close()
+
+
+@pytest.mark.parametrize(
+    "account_number, amount",
+    [("1012345678", "4000000.00"), ("1012345679", "5000000.00")],
+)
+def test_duplicate_transaction_with_different_debit_is_rejected(client, account_number, amount):
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+    first = client.post(
+        "/api/v1/internal/accounts/1012345678/debit",
+        headers=headers,
+        json={"amount": "5000000.00", "transactionId": "CONFLICT-001"},
+    )
+    conflicting = client.post(
+        f"/api/v1/internal/accounts/{account_number}/debit",
+        headers=headers,
+        json={"amount": amount, "transactionId": "CONFLICT-001"},
+    )
+
+    assert first.status_code == 200
+    assert conflicting.status_code == 409
+
+    db = SessionLocal()
+    first_account = db.get(Account, "1012345678")
+    second_account = db.get(Account, "1012345679")
+    assert first_account is not None
+    assert second_account is not None
+    assert first_account.balance == Decimal("10000000")
+    assert second_account.balance == Decimal("5000000")
+    assert db.query(AccountDebit).filter_by(transaction_id="CONFLICT-001").count() == 1
+    db.close()
+
+
+def test_debit_record_failure_rolls_back_balance(client, monkeypatch):
+    from sqlalchemy.orm import Session
+
+    original_add = Session.add
+
+    def fail_for_debit_record(self, instance, *_args, **_kwargs):
+        if isinstance(instance, AccountDebit):
+            raise RuntimeError("simulated debit record failure")
+        return original_add(self, instance, *_args, **_kwargs)
+
+    monkeypatch.setattr(Session, "add", fail_for_debit_record)
+    with TestClient(app, raise_server_exceptions=False) as isolated_client:
+        response = isolated_client.post(
+            "/api/v1/internal/accounts/1012345678/debit",
+            headers={"X-Internal-API-Key": "test-internal-key"},
+            json={"amount": "5000000.00", "transactionId": "ROLLBACK-001"},
+        )
+
+    assert response.status_code == 500
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    assert account.balance == Decimal("15000000")
+    assert db.get(AccountDebit, "ROLLBACK-001") is None
+    db.close()
+
+
 def test_debit_rejects_invalid_cases(client: TestClient):
     headers = {"X-Internal-API-Key": "test-internal-key"}
     assert client.post("/api/v1/internal/accounts/missing/debit", headers=headers, json={"amount": 1, "transactionId": "TX"}).status_code == 404
     assert client.post("/api/v1/internal/accounts/1000000000/debit", headers=headers, json={"amount": 1, "transactionId": "TX"}).status_code == 409
     assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": 999999999, "transactionId": "TX"}).status_code == 409
     assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": 0, "transactionId": "TX"}).status_code == 422
+    assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": -1, "transactionId": "TX-NEG"}).status_code == 422
+    assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": "1.001", "transactionId": "TX-SCALE"}).status_code == 422
+    assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": "10000000000000.00", "transactionId": "TX-LIMIT"}).status_code == 422
     assert client.post("/api/v1/internal/accounts/1012345678/debit", json={"amount": 1, "transactionId": "TX"}).status_code == 401
 
 
@@ -134,11 +242,15 @@ def test_concurrent_debits_allow_only_one_success(client):
 
     def debit_once():
         with TestClient(app) as concurrent_client:
-            return concurrent_client.post(
+            response = concurrent_client.post(
                 "/api/v1/internal/accounts/1012345678/debit",
                 headers=headers,
-                json={"amount": 8000000, "transactionId": "CONCURRENT"},
+                json={
+                    "amount": 8000000,
+                    "transactionId": f"CONCURRENT-DISTINCT-{os.urandom(4).hex()}",
+                },
             ).status_code
+            return response
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         statuses = list(executor.map(lambda _: debit_once(), range(2)))
@@ -151,9 +263,65 @@ def test_concurrent_debits_allow_only_one_success(client):
     db.close()
 
 
+def test_concurrent_retries_with_same_transaction_debit_once(client):
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+
+    def debit_once():
+        with TestClient(app) as concurrent_client:
+            return concurrent_client.post(
+                "/api/v1/internal/accounts/1012345678/debit",
+                headers=headers,
+                json={"amount": "5000000.00", "transactionId": "CONCURRENT-SAME"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: debit_once(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert responses[0].json() == responses[1].json()
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    assert account.balance == Decimal("10000000")
+    assert db.query(AccountDebit).filter_by(transaction_id="CONCURRENT-SAME").count() == 1
+    db.close()
+
+
+def test_concurrent_same_transaction_retries_succeed_when_balance_covers_one_debit(client):
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    account.balance = Decimal("5000000")
+    db.commit()
+    db.close()
+
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+
+    def debit_once():
+        with TestClient(app) as concurrent_client:
+            return concurrent_client.post(
+                "/api/v1/internal/accounts/1012345678/debit",
+                headers=headers,
+                json={"amount": "5000000.00", "transactionId": "CONCURRENT-EXACT"},
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(executor.map(lambda _: debit_once(), range(2)))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert responses[0].json() == responses[1].json()
+    db = SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    assert account.balance == Decimal("0")
+    assert db.query(AccountDebit).filter_by(transaction_id="CONCURRENT-EXACT").count() == 1
+    db.close()
+
+
 def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
     db = SessionLocal()
     account = db.get(Account, "1012345678")
+    assert account is not None
     account.balance = Decimal("1000000")
     db.commit()
     db.close()
@@ -174,6 +342,7 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
     assert sorted(statuses) == [200, 409]
     db = SessionLocal()
     account = db.get(Account, "1012345678")
+    assert account is not None
     assert account.balance == Decimal("300000")
     assert account.balance >= 0
     db.close()

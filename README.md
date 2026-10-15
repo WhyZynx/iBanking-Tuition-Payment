@@ -64,7 +64,7 @@ The local MySQL server must be running. SMTP credentials are needed for OTP emai
 
 Run these scripts in order from MySQL Workbench or a MySQL client:
 
-1. `db/user/init.sql` creates `account_db`, its user/account tables, and demo records. For an existing Account DB, apply `db/user/add_user_student_id.sql` once to add the optional user-to-student mapping and map the demo user if it has no mapping yet.
+1. `db/user/init.sql` creates `account_db`, its user/account/debit tables, and demo records. For an existing Account DB, apply `db/user/add_user_student_id.sql` once to add the optional user-to-student mapping and map the demo user if it has no mapping yet, then apply `db/user/add_account_debits.sql` once to add debit idempotency records. Do not drop or recreate existing tables.
 2. `db/tuition/tuition.sql` creates `ibanking_tuition`, tuition bills, and the payment-claim table for new databases.
 3. `db/tuition/tuition_payment_claims.sql` is an idempotent setup script. Apply it to an existing Tuition database if the claim table is missing.
 4. `db/payment/payment_init.sql` creates `payment_db`, transactions, and OTPs.
@@ -167,7 +167,7 @@ The **Pay for me** choice loads `student_id` from the current user's profile and
 
 - Protected browser APIs use JWT Bearer authentication; payer identity comes from JWT `sub`.
 - User passwords are stored as bcrypt hashes. Account lookup, debit, and tuition mutation require the backend internal API key.
-- Payment Service checks account ownership and active status. Atomic conditional debit requires an active account and enough balance, preventing a negative balance.
+- Payment Service checks account ownership and active status. Atomic conditional debit requires an active account and enough balance, preventing a negative balance. Successful debits are recorded by transaction ID in the same database transaction; identical retries return the original post-debit balance, while conflicting reuse returns HTTP 409.
 - OTP has six digits, expires after five minutes, is not returned to the browser, and is consumed with an atomic one-time update.
 - Tuition uses a unique per-student payment claim and a conditional `UNPAID` → `PAID` update. Payment claims its transaction as `PROCESSING` before side effects.
 - These database operations protect the tested account, tuition, transaction, and OTP races. They do not form a distributed transaction across services.

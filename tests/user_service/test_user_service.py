@@ -1,6 +1,8 @@
 ﻿import os
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from threading import Barrier
+from urllib.parse import unquote, urlsplit
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_user_service.db"
 os.environ["JWT_SECRET_KEY"] = "test-secret"
@@ -345,4 +347,112 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
     assert account is not None
     assert account.balance == Decimal("300000")
     assert account.balance >= 0
+    db.close()
+
+
+def _mysql_test_database_url() -> str:
+    """Require an explicitly configured, separately named MySQL test database."""
+    database_url = os.getenv("USER_SERVICE_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("Set USER_SERVICE_TEST_DATABASE_URL to an isolated MySQL test database")
+
+    parsed = urlsplit(database_url)
+    database_name = unquote(parsed.path.lstrip("/"))
+    if parsed.scheme not in {"mysql", "mysql+pymysql"}:
+        pytest.skip("USER_SERVICE_TEST_DATABASE_URL must use MySQL with PyMySQL")
+    if not database_name.lower().endswith("_test"):
+        pytest.skip("MySQL test database name must end with _test")
+    return database_url
+
+
+@pytest.fixture
+def mysql_concurrency_database(monkeypatch):
+    """Build an isolated MySQL engine without changing the app's SQLite engine."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    database_url = _mysql_test_database_url()
+    test_engine = create_engine(database_url, pool_pre_ping=True)
+    if test_engine.dialect.name != "mysql":
+        test_engine.dispose()
+        pytest.skip("Configured test URL did not create a MySQL engine")
+
+    TestSession = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
+    Base.metadata.create_all(bind=test_engine)
+    db = TestSession()
+    user = User(
+        username="concurrency-test-user",
+        password_hash="unused",
+        full_name="Concurrency Test",
+        phone="0000000000",
+        email="concurrency-test@example.com",
+    )
+    db.add(user)
+    db.flush()
+    db.add(Account(
+        account_number="CONCURRENCY-TEST",
+        user_id=user.user_id,
+        balance=Decimal("100.00"),
+    ))
+    db.commit()
+    db.close()
+
+    from backend.user_service import database as user_database
+    monkeypatch.setattr(user_database, "SessionLocal", TestSession)
+    yield TestSession
+
+    cleanup = TestSession()
+    cleanup.query(AccountDebit).filter_by(account_number="CONCURRENCY-TEST").delete()
+    cleanup.query(Account).filter_by(account_number="CONCURRENCY-TEST").delete()
+    cleanup.query(User).filter_by(username="concurrency-test-user").delete()
+    cleanup.commit()
+    cleanup.close()
+    test_engine.dispose()
+
+
+def _run_mysql_concurrent_debits(payloads: list[dict]):
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+    barrier = Barrier(len(payloads))
+
+    def debit(payload):
+        with TestClient(app) as concurrent_client:
+            barrier.wait()
+            return concurrent_client.post(
+                "/api/v1/internal/accounts/CONCURRENCY-TEST/debit",
+                headers=headers,
+                json=payload,
+            )
+
+    with ThreadPoolExecutor(max_workers=len(payloads)) as executor:
+        return list(executor.map(debit, payloads))
+
+
+def test_mysql_concurrent_distinct_transactions_do_not_overdraw(mysql_concurrency_database):
+    responses = _run_mysql_concurrent_debits([
+        {"amount": "80.00", "transactionId": "MYSQL-DISTINCT-1"},
+        {"amount": "80.00", "transactionId": "MYSQL-DISTINCT-2"},
+    ])
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    db = mysql_concurrency_database()
+    account = db.get(Account, "CONCURRENCY-TEST")
+    assert account is not None
+    assert account.balance == Decimal("20.00")
+    assert account.balance >= 0
+    assert db.query(AccountDebit).filter_by(account_number="CONCURRENCY-TEST").count() == 1
+    db.close()
+
+
+def test_mysql_concurrent_same_transaction_debits_once(mysql_concurrency_database):
+    payload = {"amount": "80.00", "transactionId": "MYSQL-SAME-TRANSACTION"}
+    responses = _run_mysql_concurrent_debits([payload, payload])
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert responses[0].json() == responses[1].json()
+    db = mysql_concurrency_database()
+    account = db.get(Account, "CONCURRENCY-TEST")
+    assert account is not None
+    assert account.balance == Decimal("20.00")
+    assert account.balance >= 0
+    assert db.query(AccountDebit).filter_by(transaction_id="MYSQL-SAME-TRANSACTION").count() == 1
     db.close()

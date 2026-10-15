@@ -50,7 +50,7 @@ def get_current_user_id(
         ) from exc
 
 
-def get_pending_user_transaction(db_session, transaction_id, current_user_id):
+def get_user_transaction(db_session, transaction_id, current_user_id):
     transaction = TransactionModel.find_by_id(db_session, transaction_id)
     if transaction is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
@@ -59,6 +59,11 @@ def get_pending_user_transaction(db_session, transaction_id, current_user_id):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Transaction does not belong to the authenticated user",
         )
+    return transaction
+
+
+def get_pending_user_transaction(db_session, transaction_id, current_user_id):
+    transaction = get_user_transaction(db_session, transaction_id, current_user_id)
     if transaction.status != "PENDING":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -81,6 +86,28 @@ def create_payment(
         student_id=request.student_id,
         account_number=request.account_number,
     )
+
+
+@router.get("/api/v1/payments/{transaction_id}")
+def get_payment_status(
+    transaction_id: str,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    transaction = get_user_transaction(db_session, transaction_id, current_user_id)
+    return {
+        "transaction_id": transaction.transaction_id,
+        "student_id": transaction.student_id,
+        "student_name": transaction.student_name,
+        "source_account_number": transaction.source_account_number,
+        "amount": transaction.amount,
+        "status": transaction.status,
+        "completed_at": (
+            transaction.completed_at.isoformat()
+            if transaction.completed_at
+            else None
+        ),
+    }
 
 
 @router.post("/api/v1/payments/{transaction_id}/otp")

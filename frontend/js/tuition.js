@@ -44,12 +44,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 	resendOtpButton.addEventListener('click', requestOtp);
 	otpForm.addEventListener('submit', confirmPayment);
 
-	if (pendingPayment) {
-		await cancelPendingOnRefresh();
-		pendingPayment = null;
-	}
-
 	await loadPayerAndAccounts();
+	if (pendingPayment) await restorePendingPayment();
 
 	async function loadPayerAndAccounts() {
 		try {
@@ -325,15 +321,67 @@ document.addEventListener('DOMContentLoaded', async () => {
 				body: JSON.stringify({ transactionId: pendingPayment.transactionId, otpCode: otpInput.value })
 			});
 			renderSuccess(result);
-			sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
-			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
-			pendingPayment = null;
+			clearPendingPayment();
 		} catch (error) {
 			otpError.textContent = error.message;
 			otpInput.select();
 		} finally {
 			confirmOtpButton.disabled = false;
 		}
+	}
+
+	async function restorePendingPayment() {
+		paymentSection.classList.remove('hidden');
+		lockPaymentForm();
+		otpSection.classList.remove('hidden');
+		otpInput.disabled = true;
+		confirmOtpButton.disabled = true;
+		resendOtpButton.disabled = true;
+		otpDeliveryMessage.textContent = 'Checking the payment status...';
+
+		try {
+			let result = await getPendingPaymentStatus();
+			for (let attempt = 0; result.status === 'PROCESSING' && attempt < 30; attempt += 1) {
+				otpDeliveryMessage.textContent = 'Payment is processing. Checking for the result...';
+				await new Promise(resolve => setTimeout(resolve, 1000));
+				result = await getPendingPaymentStatus();
+			}
+
+			if (result.status === 'SUCCESS') {
+				renderSuccess(result);
+				clearPendingPayment();
+			} else if (result.status === 'PENDING') {
+				otpInput.disabled = false;
+				confirmOtpButton.disabled = false;
+				resendOtpButton.disabled = false;
+				showOtpStep('Your payment is still pending. Enter the emailed OTP or request a new one.');
+			} else if (result.status === 'PROCESSING') {
+				otpDeliveryMessage.textContent = 'Payment is still processing. Keep this page open or refresh to check again.';
+			} else if (result.status === 'RECONCILIATION_REQUIRED') {
+				otpError.textContent = 'Payment needs manual review. Do not submit another payment for this tuition.';
+			} else if (result.status === 'FAILED') {
+				otpError.textContent = 'Payment failed. Check transaction history before trying again.';
+				clearPendingPayment();
+				unlockPaymentForm();
+			} else {
+				otpError.textContent = 'Payment status is unknown. Check transaction history before trying again.';
+			}
+		} catch (error) {
+			otpDeliveryMessage.textContent = 'Could not verify payment status. Do not submit again until the status is checked.';
+			otpError.textContent = error.message;
+		}
+	}
+
+	function getPendingPaymentStatus() {
+		return window.IBanking.paymentRequest(
+			`/api/v1/payments/${encodeURIComponent(pendingPayment.transactionId)}`
+		);
+	}
+
+	function clearPendingPayment() {
+		sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
+		sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
+		pendingPayment = null;
 	}
 
 	function renderSuccess(result) {
@@ -369,6 +417,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 		createPaymentButton.disabled = true;
 	}
 
+	function unlockPaymentForm() {
+		studentIdInput.disabled = false;
+		searchButton.disabled = false;
+		document.querySelectorAll('input[name="payment-target"]').forEach(input => input.disabled = false);
+		confirmDetails.disabled = false;
+		document.querySelectorAll('input[name="payment-account"]').forEach(input => input.disabled = false);
+		updatePaymentState();
+	}
+
 	function storePendingPayment() {
 		sessionStorage.setItem(window.IBanking.PENDING_TRANSACTION_KEY, pendingPayment.transactionId);
 		sessionStorage.setItem(window.IBanking.PENDING_CONTEXT_KEY, JSON.stringify(pendingPayment));
@@ -383,19 +440,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
 		}
 		return null;
-	}
-
-	async function cancelPendingOnRefresh() {
-		try {
-			await window.IBanking.paymentRequest('/api/v1/payments/cancel-pending', {
-				method: 'POST'
-			});
-		} catch (error) {
-			console.error('Could not cancel pending payment after refresh:', error);
-		} finally {
-			sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
-			sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
-		}
 	}
 
 	function showServiceMessage(element, message) {

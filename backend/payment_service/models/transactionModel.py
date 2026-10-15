@@ -42,7 +42,7 @@ class TransactionModel:
             FROM transactions
             WHERE payer_user_id = :user_id
               AND student_id = :student_id
-              AND status IN ('PENDING', 'PROCESSING')
+              AND status IN ('PENDING', 'PROCESSING', 'RECONCILIATION_REQUIRED')
             LIMIT 1
         """)
         return db_session.execute(
@@ -95,6 +95,20 @@ class TransactionModel:
                 "status": status,
                 "id": transaction_id,
             },
+        )
+        db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
+    def mark_reconciliation_required(db_session, transaction_id):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET status = 'RECONCILIATION_REQUIRED'
+                WHERE transaction_id = :id
+                  AND status = 'PROCESSING'
+            """),
+            {"id": transaction_id},
         )
         db_session.commit()
         return result.rowcount == 1

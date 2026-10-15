@@ -381,7 +381,7 @@ class PaymentService:
                 "Debit outcome is unknown for transaction %s; transaction requires reconciliation",
                 transaction_id,
             )
-            self._mark_transaction_failed(db_session, transaction_id)
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="User Service debit outcome is unknown; transaction requires reconciliation",
@@ -401,7 +401,7 @@ class PaymentService:
                 debit_response.status_code,
                 transaction_id,
             )
-            self._mark_transaction_failed(db_session, transaction_id)
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="User Service debit failed; transaction requires reconciliation",
@@ -419,7 +419,7 @@ class PaymentService:
                 "Partial payment: debit succeeded but Tuition Service update failed for transaction %s",
                 transaction_id,
             )
-            self._mark_transaction_failed(db_session, transaction_id)
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Debit succeeded but tuition update failed; transaction requires reconciliation",
@@ -431,7 +431,7 @@ class PaymentService:
                 tuition_pay_response.status_code,
                 transaction_id,
             )
-            self._mark_transaction_failed(db_session, transaction_id)
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             if tuition_pay_response.status_code in (404, 409):
                 raise HTTPException(
                     status_code=tuition_pay_response.status_code,
@@ -453,6 +453,7 @@ class PaymentService:
                 "Partial payment: debit and tuition update succeeded but transaction finalization failed for %s",
                 transaction_id,
             )
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Debit and tuition update succeeded but transaction could not be finalized",
@@ -463,6 +464,7 @@ class PaymentService:
                 "Payment side effects succeeded but transaction %s was no longer PENDING during finalization",
                 transaction_id,
             )
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
                 status_code=409,
                 detail="Transaction could not be finalized",
@@ -551,5 +553,19 @@ class PaymentService:
         except Exception:
             logger.exception(
                 "Could not record failure for transaction %s after a possible debit",
+                transaction_id,
+            )
+
+    @staticmethod
+    def _mark_transaction_reconciliation_required(db_session, transaction_id):
+        try:
+            if not TransactionModel.mark_reconciliation_required(db_session, transaction_id):
+                logger.error(
+                    "Could not mark transaction %s for reconciliation",
+                    transaction_id,
+                )
+        except Exception:
+            logger.exception(
+                "Could not record reconciliation requirement for transaction %s",
                 transaction_id,
             )

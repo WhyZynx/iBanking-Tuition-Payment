@@ -17,28 +17,28 @@ WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'user01')
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
 SELECT 'demo_minh',
        '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Minh Nguyen', '0902000001', 'demo.minh@example.test', 'DEMO24001'
+       'Minh Nguyen', '0902000001', 'demo.minh@example.com', 'DEMO24001'
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_minh')
   AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24001');
 
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
 SELECT 'demo_linh',
        '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Linh Tran', '0902000002', 'demo.linh@example.test', 'DEMO24002'
+       'Linh Tran', '0902000002', 'demo.linh@example.com', 'DEMO24002'
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_linh')
   AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24002');
 
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
 SELECT 'demo_khoa',
        '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Khoa Le', '0902000003', 'demo.khoa@example.test', 'DEMO24003'
+       'Khoa Le', '0902000003', 'demo.khoa@example.com', 'DEMO24003'
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_khoa')
   AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24003');
 
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
 SELECT 'demo_hanh',
        '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Hanh Pham', '0902000004', 'demo.hanh@example.test', 'DEMO24004'
+       'Hanh Pham', '0902000004', 'demo.hanh@example.com', 'DEMO24004'
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_hanh')
   AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24004');
 

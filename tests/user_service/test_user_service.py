@@ -1,18 +1,23 @@
-﻿import os
+import os
+from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from threading import Barrier
+from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-os.environ["DATABASE_URL"] = "sqlite:///./test_user_service.db"
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ["JWT_SECRET_KEY"] = "test-secret"
 os.environ["INTERNAL_API_KEY"] = "test-internal-key"
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from backend.user_service.database import Base, SessionLocal, engine
-from backend.user_service.main import app
+from backend.user_service import database as user_database
+from backend.user_service.database import Base
+from backend.user_service import main as user_main
 from backend.user_service.models import Account, AccountDebit, User
 from backend.user_service.security import hash_password
 
@@ -20,10 +25,26 @@ TEST_LOGIN_PASSWORD = "test-user-login-only"
 
 
 @pytest.fixture(autouse=True)
-def reset_database():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+def reset_database(tmp_path, monkeypatch):
+    test_db_path = Path(tmp_path) / "user_service_test.sqlite3"
+    test_engine = create_engine(
+        f"sqlite:///{test_db_path.as_posix()}",
+        connect_args={"check_same_thread": False},
+    )
+    test_session_local = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
+    monkeypatch.setattr(user_database, "engine", test_engine)
+    monkeypatch.setattr(user_database, "SessionLocal", test_session_local)
+    monkeypatch.setattr(user_main, "engine", test_engine)
+    Base.metadata.create_all(bind=test_engine)
+
+    @asynccontextmanager
+    async def test_lifespan(_app):
+        # The fixture initializes schema once; TestClient startup must not
+        # concurrently call create_all() against this SQLite database.
+        yield
+
+    monkeypatch.setattr(user_main.app.router, "lifespan_context", test_lifespan)
+    db = test_session_local()
     user = User(
         username="user01",
         password_hash=hash_password(TEST_LOGIN_PASSWORD),
@@ -44,13 +65,13 @@ def reset_database():
     db.commit()
     db.close()
     yield
-    Base.metadata.drop_all(bind=engine)
-    engine.dispose()
+    Base.metadata.drop_all(bind=test_engine)
+    test_engine.dispose()
 
 
 @pytest.fixture
 def client():
-    with TestClient(app) as test_client:
+    with TestClient(user_main.app) as test_client:
         yield test_client
 
 
@@ -98,7 +119,7 @@ def test_expired_jwt_is_rejected(client: TestClient):
 
 
 def test_accounts_are_scoped_to_current_user(client: TestClient):
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     other_user = User(
         username="user02",
         password_hash=hash_password("other-password"),
@@ -160,7 +181,7 @@ def test_duplicate_debit_returns_original_result_without_debiting_again(client: 
 
     assert first.status_code == retry.status_code == 200
     assert first.json() == retry.json()
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     debit_records = db.query(AccountDebit).filter_by(transaction_id="RETRY-001").all()
@@ -189,7 +210,7 @@ def test_duplicate_transaction_with_different_debit_is_rejected(client, account_
     assert first.status_code == 200
     assert conflicting.status_code == 409
 
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     first_account = db.get(Account, "1012345678")
     second_account = db.get(Account, "1012345679")
     assert first_account is not None
@@ -211,7 +232,7 @@ def test_debit_record_failure_rolls_back_balance(client, monkeypatch):
         return original_add(self, instance, *_args, **_kwargs)
 
     monkeypatch.setattr(Session, "add", fail_for_debit_record)
-    with TestClient(app, raise_server_exceptions=False) as isolated_client:
+    with TestClient(user_main.app, raise_server_exceptions=False) as isolated_client:
         response = isolated_client.post(
             "/api/v1/internal/accounts/1012345678/debit",
             headers={"X-Internal-API-Key": "test-internal-key"},
@@ -219,7 +240,7 @@ def test_debit_record_failure_rolls_back_balance(client, monkeypatch):
         )
 
     assert response.status_code == 500
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("15000000")
@@ -243,7 +264,7 @@ def test_concurrent_debits_allow_only_one_success(client):
     headers = {"X-Internal-API-Key": "test-internal-key"}
 
     def debit_once():
-        with TestClient(app) as concurrent_client:
+        with TestClient(user_main.app) as concurrent_client:
             response = concurrent_client.post(
                 "/api/v1/internal/accounts/1012345678/debit",
                 headers=headers,
@@ -258,7 +279,7 @@ def test_concurrent_debits_allow_only_one_success(client):
         statuses = list(executor.map(lambda _: debit_once(), range(2)))
 
     assert sorted(statuses) == [200, 409]
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("7000000")
@@ -269,7 +290,7 @@ def test_concurrent_retries_with_same_transaction_debit_once(client):
     headers = {"X-Internal-API-Key": "test-internal-key"}
 
     def debit_once():
-        with TestClient(app) as concurrent_client:
+        with TestClient(user_main.app) as concurrent_client:
             return concurrent_client.post(
                 "/api/v1/internal/accounts/1012345678/debit",
                 headers=headers,
@@ -281,7 +302,7 @@ def test_concurrent_retries_with_same_transaction_debit_once(client):
 
     assert [response.status_code for response in responses] == [200, 200]
     assert responses[0].json() == responses[1].json()
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("10000000")
@@ -290,7 +311,7 @@ def test_concurrent_retries_with_same_transaction_debit_once(client):
 
 
 def test_concurrent_same_transaction_retries_succeed_when_balance_covers_one_debit(client):
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     account.balance = Decimal("5000000")
@@ -300,7 +321,7 @@ def test_concurrent_same_transaction_retries_succeed_when_balance_covers_one_deb
     headers = {"X-Internal-API-Key": "test-internal-key"}
 
     def debit_once():
-        with TestClient(app) as concurrent_client:
+        with TestClient(user_main.app) as concurrent_client:
             return concurrent_client.post(
                 "/api/v1/internal/accounts/1012345678/debit",
                 headers=headers,
@@ -312,7 +333,7 @@ def test_concurrent_same_transaction_retries_succeed_when_balance_covers_one_deb
 
     assert [response.status_code for response in responses] == [200, 200]
     assert responses[0].json() == responses[1].json()
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("0")
@@ -321,7 +342,7 @@ def test_concurrent_same_transaction_retries_succeed_when_balance_covers_one_deb
 
 
 def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     account.balance = Decimal("1000000")
@@ -331,7 +352,7 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
     headers = {"X-Internal-API-Key": "test-internal-key"}
 
     def debit_once(index):
-        with TestClient(app) as concurrent_client:
+        with TestClient(user_main.app) as concurrent_client:
             return concurrent_client.post(
                 "/api/v1/internal/accounts/1012345678/debit",
                 headers=headers,
@@ -342,7 +363,7 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
         statuses = list(executor.map(debit_once, range(2)))
 
     assert sorted(statuses) == [200, 409]
-    db = SessionLocal()
+    db = user_database.SessionLocal()
     account = db.get(Account, "1012345678")
     assert account is not None
     assert account.balance == Decimal("300000")
@@ -351,7 +372,7 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
 
 
 def _mysql_test_database_url() -> str:
-    """Require an explicitly configured, separately named MySQL test database."""
+    """Require the dedicated account_db_test database."""
     database_url = os.getenv("USER_SERVICE_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("Set USER_SERVICE_TEST_DATABASE_URL to an isolated MySQL test database")
@@ -360,15 +381,15 @@ def _mysql_test_database_url() -> str:
     database_name = unquote(parsed.path.lstrip("/"))
     if parsed.scheme not in {"mysql", "mysql+pymysql"}:
         pytest.skip("USER_SERVICE_TEST_DATABASE_URL must use MySQL with PyMySQL")
-    if not database_name.lower().endswith("_test"):
-        pytest.skip("MySQL test database name must end with _test")
+    if database_name.lower() != "account_db_test":
+        pytest.skip("MySQL concurrency tests require the exact database name account_db_test")
     return database_url
 
 
 @pytest.fixture
 def mysql_concurrency_database(monkeypatch):
     """Build an isolated MySQL engine without changing the app's SQLite engine."""
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, text
     from sqlalchemy.orm import sessionmaker
 
     database_url = _mysql_test_database_url()
@@ -377,9 +398,37 @@ def mysql_concurrency_database(monkeypatch):
         test_engine.dispose()
         pytest.skip("Configured test URL did not create a MySQL engine")
 
+    # Verify server-side identity before schema creation or row mutation.
+    with test_engine.connect() as connection:
+        actual_database = connection.execute(text("SELECT DATABASE()")).scalar_one_or_none()
+    if actual_database != "account_db_test":
+        test_engine.dispose()
+        pytest.fail("Connected MySQL database identity is not account_db_test")
+
     TestSession = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=test_engine)
     db = TestSession()
+    existing_user = db.query(User).filter_by(username="concurrency-test-user").first()
+    existing_account = db.get(Account, "CONCURRENCY-TEST")
+    existing_ledger = db.query(AccountDebit).filter(
+        AccountDebit.transaction_id.in_(
+            [
+                "MYSQL-DISTINCT-1",
+                "MYSQL-DISTINCT-2",
+                "MYSQL-SAME-TRANSACTION",
+            ]
+        )
+    ).first()
+    any_account_ledger = db.query(AccountDebit).filter_by(
+        account_number="CONCURRENCY-TEST"
+    ).first()
+    if existing_user or existing_account or existing_ledger or any_account_ledger:
+        db.close()
+        test_engine.dispose()
+        pytest.fail(
+            "account_db_test contains reserved concurrency fixture records; "
+            "refusing to overwrite or clean them up"
+        )
     user = User(
         username="concurrency-test-user",
         password_hash="unused",
@@ -415,7 +464,7 @@ def _run_mysql_concurrent_debits(payloads: list[dict]):
     barrier = Barrier(len(payloads))
 
     def debit(payload):
-        with TestClient(app) as concurrent_client:
+        with TestClient(user_main.app) as concurrent_client:
             barrier.wait()
             return concurrent_client.post(
                 "/api/v1/internal/accounts/CONCURRENCY-TEST/debit",

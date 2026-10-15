@@ -35,6 +35,17 @@ class FakeResponse:
 
 
 class FakeSession:
+    def __init__(self):
+        self.statements = []
+        self.commits = 0
+
+    def execute(self, query, parameters=None):
+        self.statements.append((str(query), parameters))
+        return SimpleNamespace(rowcount=1)
+
+    def commit(self):
+        self.commits += 1
+
     def close(self):
         pass
 
@@ -83,6 +94,8 @@ def payment_client(monkeypatch):
         calls["get"].append((url, kwargs))
         if state["get_exception_contains"] and state["get_exception_contains"] in url:
             raise state["get_exception"]
+        if "/api/v1/users/me" in url:
+            return FakeResponse(200, {"email": "payer@example.test"})
         if "/api/v1/tuition/" in url:
             return state["tuition"]
         if "/api/v1/internal/accounts/" in url:
@@ -140,6 +153,13 @@ def payment_client(monkeypatch):
         status_updates.append(new_status)
         return True
 
+    def mark_reconciliation_required(_db, transaction_id):
+        if transaction_id != TRANSACTION_ID or transaction.status != "PROCESSING":
+            return False
+        transaction.status = "RECONCILIATION_REQUIRED"
+        status_updates.append("RECONCILIATION_REQUIRED")
+        return True
+
     def claim_transaction(_db, transaction_id, payer_user_id):
         with transaction_claim_lock:
             if (
@@ -176,9 +196,15 @@ def payment_client(monkeypatch):
     monkeypatch.setattr(paymentService.requests, "post", post)
     monkeypatch.setattr(paymentService.requests, "put", put)
     monkeypatch.setattr(paymentService.requests, "delete", delete)
+    monkeypatch.setattr(paymentService, "send_payment_success_email", lambda **_kwargs: None)
     monkeypatch.setattr(transactionModel.TransactionModel, "find_by_id", find_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "complete", complete_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "update_status", update_transaction_status)
+    monkeypatch.setattr(
+        transactionModel.TransactionModel,
+        "mark_reconciliation_required",
+        mark_reconciliation_required,
+    )
     monkeypatch.setattr(transactionModel.TransactionModel, "claim_for_processing", claim_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "release_processing", release_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "find_by_user_id", get_history)
@@ -227,11 +253,13 @@ def test_successful_payment_revalidates_and_finalizes_transaction(payment_client
     assert state["otp_used"] is True
     assert status_updates == ["SUCCESS"]
 
-    tuition_get, account_get = calls["get"]
+    tuition_get, account_get, email_get = calls["get"]
     assert tuition_get[0].endswith(f"/api/v1/tuition/{STUDENT_ID}")
     assert tuition_get[1]["headers"]["X-Internal-API-Key"] == INTERNAL_KEY
     assert account_get[0].endswith(f"/api/v1/internal/accounts/{ACCOUNT_NUMBER}")
     assert account_get[1]["headers"]["X-Internal-API-Key"] == INTERNAL_KEY
+    assert email_get[0].endswith("/api/v1/users/me")
+    assert email_get[1]["headers"]["Authorization"].startswith("Bearer ")
 
     claim_url, claim_args = calls["post"][0]
     assert claim_url.endswith(f"/api/v1/tuition/{STUDENT_ID}/claim")
@@ -431,7 +459,7 @@ def test_debit_not_found_does_not_update_tuition(payment_client):
     assert state["otp_used"] is True
 
 
-def test_unknown_debit_result_marks_transaction_failed_for_reconciliation(payment_client):
+def test_unknown_debit_result_marks_transaction_for_reconciliation(payment_client):
     import requests
 
     client, transaction, state, calls, status_updates, headers = payment_client
@@ -442,8 +470,8 @@ def test_unknown_debit_result_marks_transaction_failed_for_reconciliation(paymen
     assert response.status_code == 503
     assert calls["post"]
     assert calls["put"] == []
-    assert transaction.status == "FAILED"
-    assert status_updates == ["FAILED"]
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
     assert "outcome is unknown" in response.json()["detail"]
 
 
@@ -456,10 +484,10 @@ def test_tuition_failure_after_debit_marks_failed_and_logs_partial_payment(payme
     assert response.status_code == 502
     assert calls["post"]
     assert calls["put"]
-    assert transaction.status == "FAILED"
-    assert transaction.completed_at is not None
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert transaction.completed_at is None
     assert state["otp_used"] is True
-    assert status_updates == ["FAILED"]
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
     assert "Partial payment: debit succeeded" in caplog.text
     assert "requires reconciliation" in response.json()["detail"]
 
@@ -474,9 +502,9 @@ def test_tuition_timeout_after_debit_marks_failed(payment_client):
 
     assert response.status_code == 503
     assert calls["post"]
-    assert transaction.status == "FAILED"
+    assert transaction.status == "RECONCILIATION_REQUIRED"
     assert state["otp_used"] is True
-    assert status_updates == ["FAILED"]
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
 
 
 def test_user_service_unavailable_during_revalidation_does_not_debit(payment_client):

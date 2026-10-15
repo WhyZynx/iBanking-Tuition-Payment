@@ -132,7 +132,9 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
 
     def confirm(transaction_id, user_id):
         try:
-            result = service.confirm_payment(None, transaction_id, "004821", user_id)
+            result = service.confirm_payment(
+                None, transaction_id, "004821", user_id, "test-access-token"
+            )
             return result["status"]
         except HTTPException as exc:
             return exc.status_code

@@ -1,4 +1,4 @@
-﻿CREATE DATABASE IF NOT EXISTS account_db;
+CREATE DATABASE IF NOT EXISTS account_db;
 USE account_db;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -34,26 +34,3 @@ CREATE TABLE IF NOT EXISTS account_debits (
 		REFERENCES accounts(account_number),
 	INDEX ix_account_debits_account_number (account_number)
 );
-
-INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-VALUES (
-	'user01',
-	'$2b$12$PxWXN9r0ukABcgaalI/pEOwMnEOLN2R9bjZFCLOWNCstuW2r5huhG',
-	'Nguyen Van A',
-	'0901234567',
-	'user01@example.com',
-	'524H0104'
-)
-ON DUPLICATE KEY UPDATE
-	username = VALUES(username),
-	student_id = COALESCE(users.student_id, VALUES(student_id));
-
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '1012345678', user_id, 15000000.00, TRUE, 'ACTIVE'
-FROM users WHERE username = 'user01'
-ON DUPLICATE KEY UPDATE account_number = VALUES(account_number);
-
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '1012345679', user_id, 5000000.00, FALSE, 'ACTIVE'
-FROM users WHERE username = 'user01'
-ON DUPLICATE KEY UPDATE account_number = VALUES(account_number);

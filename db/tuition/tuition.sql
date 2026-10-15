@@ -26,17 +26,3 @@ CREATE TABLE IF NOT EXISTS tuition_payment_claims (
     CONSTRAINT fk_tuition_payment_claim_student
         FOREIGN KEY (student_id) REFERENCES tuition_bills(student_id)
 );
-
-
-INSERT INTO tuition_bills
-    (student_id, student_name, amount, status)
-VALUES
-    ('524H0012', 'Nguyen Minh Anh', 18500000, 'UNPAID'),
-    ('524H0035', 'Tran Gia Huy', 16250000, 'UNPAID'),
-    ('524H0078', 'Le Hoang Phuc', 19750000, 'PAID'),
-    ('524H0104', 'Pham Ngoc Han', 17300000, 'UNPAID'),
-    ('524H0126', 'Vo Minh Khang', 21000000, 'UNPAID'),
-    ('524H0159', 'Bui Thanh Truc', 15800000, 'PAID')
-ON DUPLICATE KEY UPDATE
-    student_name = VALUES(student_name),
-    amount = VALUES(amount);

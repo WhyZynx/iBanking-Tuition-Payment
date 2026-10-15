@@ -64,14 +64,14 @@ The local MySQL server must be running. SMTP credentials are needed for OTP emai
 
 Run these scripts in order from MySQL Workbench or a MySQL client:
 
-1. `db/user/init.sql` creates `account_db`, its user/account/debit tables, and demo records. For an existing Account DB, apply `db/user/add_user_student_id.sql` once to add the optional user-to-student mapping and map the demo user if it has no mapping yet, then apply `db/user/add_account_debits.sql` once to add debit idempotency records. Do not drop or recreate existing tables.
+1. `db/user/init.sql` creates `account_db` and its user/account/debit tables. For an existing Account DB, apply `db/user/add_user_student_id.sql` once to add the optional user-to-student mapping, then apply `db/user/add_account_debits.sql` once to add debit idempotency records. Do not drop or recreate existing tables.
 2. `db/tuition/tuition.sql` creates `ibanking_tuition`, tuition bills, and the payment-claim table for new databases.
 3. `db/tuition/tuition_payment_claims.sql` is an idempotent setup script. Apply it to an existing Tuition database if the claim table is missing.
 4. `db/payment/payment_init.sql` creates `payment_db`, transactions, and OTPs.
 5. `db/payment/payment_add_student_name.sql` is only for an existing Payment database whose `transactions` table does not yet have `student_name`; do not rerun the `ALTER TABLE` after the column exists.
 6. `db/payment/payment_reconciliation_status.sql` expands the transaction status column for an existing Payment database.
 
-Database ownership is fixed: User Service → `account_db`; Tuition Service → `ibanking_tuition`; Payment Service → `payment_db`. Do not point a service at another service's database. The SQL seed includes the user `user01`, accounts `1012345678` and `1012345679`, and tuition records including `524H0104`. The seeded password is stored only as a bcrypt hash in SQL; use the password supplied for your local demo setup.
+Database ownership is fixed: User Service → `account_db`; Tuition Service → `ibanking_tuition`; Payment Service → `payment_db`. Do not point a service at another service's database. Schema setup does not load demo data. For optional fictional users, accounts, and tuition bills, follow [docs/DEMO_DATA.md](docs/DEMO_DATA.md) and run the separate demo seeds only in a fresh disposable local setup.
 
 ## Environment configuration
 

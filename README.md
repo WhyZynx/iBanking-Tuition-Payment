@@ -237,13 +237,9 @@ Open the application through Nginx:
 
 - Frontend: http://localhost:8080
 
-Nginx routes `/api/v1/tuition` to the Tuition Service, `/api/v1/payments` and `/api/v1/transactions` to the Payment Service, and other `/api/v1/` requests to the User Service. The backend ports remain published for direct local access and API debugging.
+Nginx routes `/api/v1/tuition` to the Tuition Service, `/api/v1/payments` and `/api/v1/transactions` to the Payment Service, and other `/api/v1/` requests to the User Service. Backend ports are not published on the host; services communicate over the private Docker network.
 
-Access the API documentation directly:
-
-- User Service: http://localhost:8001/docs
-- Tuition Service: http://localhost:8002/docs
-- Payment Service: http://localhost:8003/docs
+The backend Swagger pages are not exposed through Nginx in this setup. To access them from the host for debugging, temporarily publish the required backend port in `docker-compose.yml` and recreate that service.
 
 ### 5. Stop Services
 

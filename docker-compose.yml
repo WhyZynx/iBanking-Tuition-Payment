@@ -30,8 +30,6 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
-    ports:
-      - "8001:8001"
     depends_on:
       mysql:
         condition: service_healthy
@@ -53,8 +51,6 @@ services:
     environment:
       DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
-    ports:
-      - "8002:8002"
     depends_on:
       mysql:
         condition: service_healthy
@@ -84,8 +80,6 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-    ports:
-      - "8003:8003"
     depends_on:
       mysql:
         condition: service_healthy

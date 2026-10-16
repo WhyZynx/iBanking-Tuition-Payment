@@ -198,3 +198,55 @@ The scripts keep MySQL Safe Updates enabled and filter writes/deletes by primary
 - **Backend service not running:** check its terminal for startup errors and open the matching `/health` URL.
 - **Port already in use:** stop the old process or close its terminal, then restart the service on the required port.
 - **OTP email not received:** verify the demo user's email is a mailbox you control, the Payment Service SMTP settings are correct, and `SMTP_PASSWORD` is a Gmail App Password. Check spam and the Payment terminal for an error without sharing secrets.
+
+## Docker Deployment
+
+### 1. Requirements
+
+- Docker Desktop installed and running.
+- Git.
+
+### 2. Configure Environment
+
+Create the Docker environment file:
+
+```bash
+cp .env.docker.example .env.docker
+```
+
+Update `.env.docker` with your local configuration and credentials. Do not commit this file to Git.
+
+### 3. Build and Run
+
+Run from the project root:
+
+```bash
+docker compose --env-file .env.docker config
+docker compose --env-file .env.docker up --build -d
+```
+
+### 4. Check Services
+
+```bash
+docker compose --env-file .env.docker ps
+```
+
+Access the API documentation:
+
+- User Service: http://localhost:8001/docs
+- Tuition Service: http://localhost:8002/docs
+- Payment Service: http://localhost:8003/docs
+
+### 5. Stop Services
+
+```bash
+docker compose --env-file .env.docker down
+```
+
+To start the services again:
+
+```bash
+docker compose --env-file .env.docker up -d
+```
+
+**Note:** `docker compose down -v` removes named volumes and may delete database data. Use it only when you intend to reset the database.

@@ -1,0 +1,104 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: ibanking-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db/docker-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - ibanking-network
+
+  user-service:
+    build:
+      context: .
+      dockerfile: backend/user_service/Dockerfile
+    container_name: ibanking-user-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/account_db"
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+    ports:
+      - "8001:8001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ibanking-network
+
+  tuition-service:
+    build:
+      context: .
+      dockerfile: backend/tuition_service/Dockerfile
+    container_name: ibanking-tuition-service
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition"
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
+    ports:
+      - "8002:8002"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ibanking-network
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: backend/payment_service/Dockerfile
+    container_name: ibanking-payment-service
+    restart: unless-stopped
+    environment:
+      PAYMENT_DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/payment_db"
+      USER_SERVICE_URL: http://user-service:8001
+      TUITION_SERVICE_URL: http://tuition-service:8002
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+    ports:
+      - "8003:8003"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      tuition-service:
+        condition: service_healthy
+    networks:
+      - ibanking-network
+
+networks:
+  ibanking-network:
+    driver: bridge
+
+volumes:
+  mysql_data:

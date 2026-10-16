@@ -7,6 +7,7 @@ Desktop.ini
 .env
 .env.*
 !.env.example
+!.env.docker.example
 .venv/
 venv/
 env/

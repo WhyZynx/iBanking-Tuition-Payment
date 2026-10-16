@@ -201,9 +201,11 @@ The scripts keep MySQL Safe Updates enabled and filter writes/deletes by primary
 
 ## Docker Deployment
 
+Nginx is not strictly required to run the application, but it provides one browser entry point for the Docker deployment. It serves the static frontend on port `8080` and routes browser API requests to the User, Tuition, or Payment Service by URL path. This keeps the Docker frontend on one origin instead of hard-coding backend ports in browser requests, and makes the deployment closer to a typical reverse-proxy setup. Nginx does not replace backend authentication or authorization.
+
 ### 1. Requirements
 
-- Docker Desktop installed and running.
+- Docker Engine and Docker Compose installed and running. Docker Desktop is also supported.
 - Git.
 
 ### 2. Configure Environment
@@ -221,7 +223,7 @@ Update `.env.docker` with your local configuration and credentials. Do not commi
 Run from the project root:
 
 ```bash
-docker compose --env-file .env.docker config
+docker compose --env-file .env.docker config --quiet
 docker compose --env-file .env.docker up --build -d
 ```
 
@@ -231,7 +233,13 @@ docker compose --env-file .env.docker up --build -d
 docker compose --env-file .env.docker ps
 ```
 
-Access the API documentation:
+Open the application through Nginx:
+
+- Frontend: http://localhost:8080
+
+Nginx routes `/api/v1/tuition` to the Tuition Service, `/api/v1/payments` and `/api/v1/transactions` to the Payment Service, and other `/api/v1/` requests to the User Service. The backend ports remain published for direct local access and API debugging.
+
+Access the API documentation directly:
 
 - User Service: http://localhost:8001/docs
 - Tuition Service: http://localhost:8002/docs

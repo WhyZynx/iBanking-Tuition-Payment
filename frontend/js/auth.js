@@ -1,7 +1,10 @@
 (function () {
-	const API_BASE_URL = 'http://localhost:8001';
-	const TUITION_API_URL = 'http://localhost:8002/api/v1/tuition';
-	const PAYMENT_API_URL = 'http://localhost:8003';
+	const useDirectApi = window.location.port === '5500';
+	const API_BASE_URL = useDirectApi ? 'http://localhost:8001' : '';
+	const TUITION_API_URL = useDirectApi
+		? 'http://localhost:8002/api/v1/tuition'
+		: '/api/v1/tuition';
+	const PAYMENT_API_URL = useDirectApi ? 'http://localhost:8003' : '';
 	const TOKEN_KEY = 'ibanking_access_token';
 	const PENDING_TRANSACTION_KEY = 'ibanking_pending_transaction_id';
 	const PENDING_CONTEXT_KEY = 'ibanking_pending_payment_context';
@@ -237,7 +240,7 @@
 		paymentRequest: (path, options) =>
 			request(PAYMENT_API_URL, path, options),
 		tuitionRequest: (path, options) =>
-			request('http://localhost:8002', path, options),
+			request(useDirectApi ? 'http://localhost:8002' : '', path, options),
 		login,
 		logout,
 		requireAuthentication

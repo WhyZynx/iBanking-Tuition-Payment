@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>iBanking | Tuition Payment System</title>
+	<link rel="stylesheet" href="css/style.css">
+	<script src="js/auth.js" defer></script>
+</head>
+<body class="landing-page">
+	<header class="landing-header">
+		<div class="landing-header-inner container">
+			<a class="landing-brand" href="index.html" aria-label="iBanking home">
+				<span class="landing-brand-mark" aria-hidden="true">iB</span>
+				<span><strong>iBanking</strong><small>Tuition Payment System</small></span>
+			</a>
+			<nav class="landing-nav" aria-label="Main navigation">
+				<a class="public-home-link active" href="index.html">Home</a>
+				<a class="auth-link logged-in-only hidden" href="dashboard.html">Dashboard</a>
+				<a class="auth-link logged-in-only hidden" href="tuition.html">Tuition</a>
+				<a class="auth-link logged-in-only hidden" href="accounts.html">Accounts</a>
+				<a class="auth-link logged-in-only hidden" href="history.html">History</a>
+				<a class="auth-link logged-in-only hidden" href="profile.html">Profile</a>
+				<a class="landing-signin auth-link logged-out-only" href="login.html">Sign In</a>
+				<a class="landing-signin auth-link logged-in-only hidden" href="login.html" data-logout>Logout</a>
+			</nav>
+		</div>
+	</header>
+
+	<main>
+		<section class="landing-hero container" aria-labelledby="hero-title">
+			<div class="landing-hero-copy">
+				<p class="landing-kicker"><span aria-hidden="true"></span> Tuition payment platform</p>
+				<h1 id="hero-title">Pay tuition<br><span>with confidence.</span></h1>
+				<p class="landing-lead">Check tuition information and access payment services through a clear, convenient university banking experience.</p>
+				<div class="landing-actions">
+					<a class="button landing-primary-cta logged-out-only" href="login.html">Get Start <span aria-hidden="true">&rarr;</span></a>
+					<a class="button landing-primary-cta auth-link logged-in-only hidden" href="dashboard.html">Go to Dashboard <span aria-hidden="true">&rarr;</span></a>
+					<a class="landing-secondary-cta" href="#how-it-works">See how it works</a>
+				</div>
+				<p class="landing-caption">A student-focused academic project by Ton Duc Thang University.</p>
+			</div>
+
+			<div class="landing-hero-art">
+				<div class="landing-art-glow" aria-hidden="true"></div>
+				<div class="landing-art-frame">
+					<img src="assets/ibanking-hero.png" alt="Illustration of tuition documents and a secure online payment experience">
+				</div>
+				<div class="landing-art-label"><span class="landing-art-dot" aria-hidden="true"></span><span><strong>University payments</strong><small>One clear experience</small></span></div>
+			</div>
+		</section>
+
+		<section class="landing-features" aria-labelledby="features-title">
+			<div class="container">
+				<div class="landing-section-heading">
+					<p class="landing-kicker">A simpler way to get started</p>
+					<h2 id="features-title">Tuition services, made clearer.</h2>
+					<p>Find the key tools for a straightforward tuition payment journey.</p>
+				</div>
+				<div class="landing-feature-grid">
+					<article class="landing-feature-card">
+						<span class="landing-feature-index">01</span>
+						<h3>Tuition lookup</h3>
+						<p>Find tuition information using a student ID.</p>
+					</article>
+					<article class="landing-feature-card">
+						<span class="landing-feature-index">02</span>
+						<h3>Account management</h3>
+						<p>Review your simulated payment accounts and available balances after sign in.</p>
+					</article>
+					<article class="landing-feature-card">
+						<span class="landing-feature-index">03</span>
+						<h3>Secure payment confirmation</h3>
+						<p>Confirm a tuition payment with an email OTP and review its transaction history.</p>
+					</article>
+				</div>
+			</div>
+		</section>
+
+		<section id="how-it-works" class="landing-process container" aria-labelledby="process-title">
+			<div class="landing-section-heading">
+				<p class="landing-kicker">The journey</p>
+				<h2 id="process-title">How it works</h2>
+				<p>A simple overview of the intended tuition payment flow.</p>
+			</div>
+			<ol class="landing-steps">
+				<li><span class="landing-step-number">1</span><div><h3>Sign in</h3><p>Access your profile and payment accounts.</p></div></li>
+				<li><span class="landing-step-number">2</span><div><h3>Check tuition</h3><p>Look up a student's tuition information.</p></div></li>
+				<li><span class="landing-step-number">3</span><div><h3>Review payment</h3><p>Confirm the details before proceeding.</p></div></li>
+				<li><span class="landing-step-number">4</span><div><h3>Verify with OTP</h3><p>Confirm payment and review the result in transaction history.</p></div></li>
+			</ol>
+		</section>
+
+		<section class="landing-trust">
+			<div class="container landing-trust-inner">
+				<div><p class="landing-kicker">Built around clear service boundaries</p><h2>A thoughtful payment experience, designed for students.</h2></div>
+				<p>Account, tuition, payment, OTP, and transaction history use authenticated service APIs with separate database ownership.</p>
+			</div>
+		</section>
+	</main>
+
+	<footer class="landing-footer">
+		<div class="container landing-footer-inner"><a class="landing-footer-brand" href="index.html">iBanking</a><span>Academic Project — Ton Duc Thang University</span></div>
+	</footer>
+</body>
+</html>

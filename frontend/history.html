@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Transaction History | iBanking</title>
+	<link rel="stylesheet" href="css/style.css">
+	<script src="js/auth.js" defer></script>
+	<script src="js/history.js" defer></script>
+</head>
+<body class="auth-pending">
+	<header class="top-header"><div class="header-content container"><a class="school" href="index.html"><span class="school-mark">TDTU</span><span class="school-name"><strong>iBanking</strong><small>Tuition Payment System</small></span></a><div class="portal-label"><span>University</span><strong>Payment Portal</strong></div></div></header>
+		<nav class="navigation" aria-label="Main navigation"><div class="navigation-content container">
+		<a class="public-home-link" href="index.html">Home</a> <a class="auth-link logged-in-only hidden" href="dashboard.html">Dashboard</a> <a class="auth-link logged-in-only hidden" href="tuition.html">Tuition</a> <a class="auth-link logged-in-only hidden" href="accounts.html">Accounts</a> <a class="auth-link logged-in-only hidden active" href="history.html">History</a> <a class="auth-link logged-in-only hidden" href="profile.html">Profile</a> <a class="auth-link logged-out-only" href="login.html">Login</a> <a class="auth-link logged-in-only hidden" href="login.html" data-logout>Logout</a>
+	</div></nav>
+	<main class="container page-content">
+		<div class="page-heading"><p class="eyebrow">Payments</p><h1>Transaction History</h1><p class="muted">Payment records are provided by the Payment Service.</p></div>
+		<section class="card history-panel" aria-live="polite"><p id="history-message" class="history-message">Loading transaction history...</p><div id="history-table-wrap" class="history-table-wrap hidden"><table><thead><tr><th>Transaction ID</th><th>Student ID</th><th>Student Name</th><th>Source Account</th><th>Amount</th><th>Status</th><th>Created At</th><th>Completed At</th></tr></thead><tbody id="history-items"></tbody></table></div></section>
+		<p class="small-note">History integration contract: <code>GET /api/v1/transactions/me</code> on the Payment Service.</p>
+	</main>
+	<footer class="site-footer"><div class="container footer-inner"><a class="brand" href="index.html">iBanking</a><span>TDTU Tuition Payment System</span></div></footer>
+</body>
+</html>

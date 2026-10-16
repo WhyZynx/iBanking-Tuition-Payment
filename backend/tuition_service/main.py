@@ -1,0 +1,1 @@
+from backend.tuition_service.controllers.tuition_controller import app

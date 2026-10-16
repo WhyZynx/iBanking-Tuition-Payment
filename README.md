@@ -198,3 +198,59 @@ The scripts keep MySQL Safe Updates enabled and filter writes/deletes by primary
 - **Backend service not running:** check its terminal for startup errors and open the matching `/health` URL.
 - **Port already in use:** stop the old process or close its terminal, then restart the service on the required port.
 - **OTP email not received:** verify the demo user's email is a mailbox you control, the Payment Service SMTP settings are correct, and `SMTP_PASSWORD` is a Gmail App Password. Check spam and the Payment terminal for an error without sharing secrets.
+
+## Docker Deployment
+
+Nginx is not strictly required to run the application, but it provides one browser entry point for the Docker deployment. It serves the static frontend on port `8080` and routes browser API requests to the User, Tuition, or Payment Service by URL path. This keeps the Docker frontend on one origin instead of hard-coding backend ports in browser requests, and makes the deployment closer to a typical reverse-proxy setup. Nginx does not replace backend authentication or authorization.
+
+### 1. Requirements
+
+- Docker Engine and Docker Compose installed and running. Docker Desktop is also supported.
+- Git.
+
+### 2. Configure Environment
+
+Create the Docker environment file:
+
+```bash
+cp .env.docker.example .env.docker
+```
+
+Update `.env.docker` with your local configuration and credentials. Do not commit this file to Git.
+
+### 3. Build and Run
+
+Run from the project root:
+
+```bash
+docker compose --env-file .env.docker config --quiet
+docker compose --env-file .env.docker up --build -d
+```
+
+### 4. Check Services
+
+```bash
+docker compose --env-file .env.docker ps
+```
+
+Open the application through Nginx:
+
+- Frontend: http://localhost:8080
+
+Nginx routes `/api/v1/tuition` to the Tuition Service, `/api/v1/payments` and `/api/v1/transactions` to the Payment Service, and other `/api/v1/` requests to the User Service. Backend ports are not published on the host; services communicate over the private Docker network.
+
+The backend Swagger pages are not exposed through Nginx in this setup. To access them from the host for debugging, temporarily publish the required backend port in `docker-compose.yml` and recreate that service.
+
+### 5. Stop Services
+
+```bash
+docker compose --env-file .env.docker down
+```
+
+To start the services again:
+
+```bash
+docker compose --env-file .env.docker up -d
+```
+
+**Note:** `docker compose down -v` removes named volumes and may delete database data. Use it only when you intend to reset the database.

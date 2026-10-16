@@ -12,6 +12,7 @@ venv/
 env/
 ENV/
 .idea/
+node_modules/
 
 # Python bytecode and caches
 __pycache__/
@@ -36,3 +37,26 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# Temporary and editor files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+
+# Private keys and local credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+secrets/
+credentials/
+*_credentials.json
+
+# Local test databases
+test_user_service.db
+*.db-journal
+*.db-wal
+*.db-shm

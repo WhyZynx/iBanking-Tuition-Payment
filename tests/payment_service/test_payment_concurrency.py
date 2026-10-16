@@ -1,3 +1,4 @@
+import json
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 from threading import Lock
@@ -34,7 +35,14 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
     }
     transaction_lock = Lock()
     tuition_lock = Lock()
-    state = {"tuition_claim": None, "tuition_paid": False, "debits": [], "successes": []}
+    state = {
+        "tuition_claim": None,
+        "tuition_paid": False,
+        "claim_count": 0,
+        "debits": [],
+        "successes": [],
+        "balances": {1: Decimal("9000000.00"), 2: Decimal("9000000.00")},
+    }
 
     def find_transaction(_db, transaction_id):
         return transactions.get(transaction_id)
@@ -82,10 +90,12 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
                 "amount": "5000000.00",
                 "status": "PAID" if state["tuition_paid"] else "UNPAID",
             })
+        if "/api/v1/users/me" in url:
+            return FakeResponse(200, {"email": "payer@example.test"})
         user_id = int(url.rsplit("account-", 1)[1])
         return FakeResponse(200, {
             "userId": user_id,
-            "balance": "9000000.00",
+            "balance": str(state["balances"][user_id]),
             "status": "ACTIVE",
         })
 
@@ -96,9 +106,12 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
                 if state["tuition_claim"] is not None or state["tuition_paid"]:
                     return FakeResponse(409)
                 state["tuition_claim"] = transaction_id
+                state["claim_count"] += 1
                 return FakeResponse(201)
-        transaction_id = _kwargs["data"].split('"transactionId":"', 1)[1].split('"', 1)[0]
+        transaction_id = json.loads(_kwargs["data"])["transactionId"]
         state["debits"].append(transaction_id)
+        payer_user_id = transactions[transaction_id].payer_user_id
+        state["balances"][payer_user_id] -= Decimal(json.loads(_kwargs["data"])["amount"])
         return FakeResponse(200, {"success": True})
 
     def put(_url, **_kwargs):
@@ -123,6 +136,7 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
     monkeypatch.setattr(otpModel.OtpModel, "verify", verify_otp)
     monkeypatch.setattr(otpModel.OtpModel, "mark_as_used", consume_otp)
     monkeypatch.setattr(paymentService, "INTERNAL_API_KEY", "test-key")
+    monkeypatch.setattr(paymentService, "send_payment_success_email", lambda **_kwargs: None)
     monkeypatch.setattr(paymentService.requests, "get", get)
     monkeypatch.setattr(paymentService.requests, "post", post)
     monkeypatch.setattr(paymentService.requests, "put", put)
@@ -146,6 +160,20 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
     assert results.count(409) == 1
     assert len(state["successes"]) == 1
     assert len(state["debits"]) == 1
+    assert state["claim_count"] == 1
     assert state["tuition_paid"] is True
     assert sum(transaction.status == "SUCCESS" for transaction in transactions.values()) == 1
-    assert sum(transaction.status == "PENDING" for transaction in transactions.values()) == 1
+
+    losing_transaction = next(
+        transaction for transaction in transactions.values()
+        if transaction.status != "SUCCESS"
+    )
+    if losing_transaction.status == "PENDING":
+        loser_result = confirm(losing_transaction.transaction_id, losing_transaction.payer_user_id)
+        assert loser_result == 409
+
+    assert losing_transaction.status == "FAILED"
+    assert sorted(transaction.status for transaction in transactions.values()) == ["FAILED", "SUCCESS"]
+    assert state["claim_count"] == 1
+    assert len(state["debits"]) == 1
+    assert sorted(state["balances"].values()) == [Decimal("4000000.00"), Decimal("9000000.00")]

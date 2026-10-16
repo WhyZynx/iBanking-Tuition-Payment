@@ -77,6 +77,13 @@ class TransactionModel:
                 completed_at = CURRENT_TIMESTAMP
             WHERE status = 'PENDING'
               AND created_at < NOW() - INTERVAL 5 MINUTE
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM otps
+                  WHERE otps.transaction_id = transactions.transaction_id
+                    AND otps.is_used = FALSE
+                    AND otps.expires_at > CURRENT_TIMESTAMP
+              )
         """)
         result = db_session.execute(query)
         db_session.commit()
@@ -97,6 +104,22 @@ class TransactionModel:
             },
         )
         db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
+    def fail_pending(db_session, transaction_id, commit=True):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET status = 'FAILED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE transaction_id = :id
+                  AND status = 'PENDING'
+            """),
+            {"id": transaction_id},
+        )
+        if commit:
+            db_session.commit()
         return result.rowcount == 1
 
     @staticmethod

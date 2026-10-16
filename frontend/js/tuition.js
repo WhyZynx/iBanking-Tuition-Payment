@@ -323,6 +323,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 			renderSuccess(result);
 			clearPendingPayment();
 		} catch (error) {
+			if (error.status === 409 && error.message === 'Tuition has already been paid') {
+				const studentId = pendingPayment.studentId;
+				otpError.textContent = error.message;
+				otpSection.classList.add('hidden');
+				otpInput.value = '';
+				clearPendingPayment();
+				unlockPaymentForm();
+				await lookupTuition(studentId);
+				return;
+			}
 			otpError.textContent = error.message;
 			otpInput.select();
 		} finally {
@@ -360,9 +370,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 			} else if (result.status === 'RECONCILIATION_REQUIRED') {
 				otpError.textContent = 'Payment needs manual review. Do not submit another payment for this tuition.';
 			} else if (result.status === 'FAILED') {
+				const studentId = pendingPayment.studentId;
 				otpError.textContent = 'Payment failed. Check transaction history before trying again.';
+				otpSection.classList.add('hidden');
+				otpInput.value = '';
+				actionMessage.textContent = 'The previous payment failed. Search for the tuition again to start a new payment.';
 				clearPendingPayment();
 				unlockPaymentForm();
+				await lookupTuition(studentId);
 			} else {
 				otpError.textContent = 'Payment status is unknown. Check transaction history before trying again.';
 			}

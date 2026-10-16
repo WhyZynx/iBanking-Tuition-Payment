@@ -1,7 +1,6 @@
 import json
 import logging
 import secrets
-import smtplib
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import quote
@@ -26,6 +25,38 @@ logger = logging.getLogger(__name__)
 
 
 class PaymentService:
+    @staticmethod
+    def fail_pending_if_tuition_paid(db_session, transaction_id, student_id):
+        headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
+        try:
+            response = requests.get(
+                f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+            tuition = response.json() if response.status_code == status.HTTP_200_OK else None
+        except (requests.RequestException, ValueError, TypeError):
+            return False
+
+        if not isinstance(tuition, dict) or tuition.get("status") != "PAID":
+            return False
+        try:
+            if not TransactionModel.fail_pending(db_session, transaction_id, commit=False):
+                db_session.rollback()
+                return False
+            OtpModel.invalidate_for_transaction(
+                db_session, transaction_id, commit=False
+            )
+            db_session.commit()
+        except Exception:
+            db_session.rollback()
+            logger.exception(
+                "Could not fail transaction or invalidate OTP for %s",
+                transaction_id,
+            )
+            return False
+        return True
+
     def request_otp(self, db_session, transaction_id, access_token):
         try:
             user_response = requests.get(
@@ -65,23 +96,36 @@ class PaymentService:
 
         expires_at = datetime.now() + timedelta(minutes=5)
         otp_id = OtpModel.create(db_session, transaction_id, otp_code, expires_at)
-        logger.info("OTP generated and stored for transaction %s (otp_id=%s)", transaction_id, otp_id)
         try:
             send_otp_email(email, transaction_id, otp_code, expires_at)
-        except smtplib.SMTPAuthenticationError as exc:
-            logger.exception("SMTP authentication failed while sending OTP for transaction %s", transaction_id)
-            OtpModel.mark_as_used(db_session, otp_id)
+        except Exception as exc:
+            logger.error(
+                "OTP email delivery failed for transaction %s (%s)",
+                transaction_id,
+                type(exc).__name__,
+            )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="SMTP authentication failed; check the Payment Service SMTP username and password",
+                detail="OTP email could not be sent; verify Payment Service SMTP configuration",
             ) from exc
-        except (OSError, RuntimeError, smtplib.SMTPException) as exc:
-            logger.exception("Could not send OTP email for transaction %s", transaction_id)
-            OtpModel.mark_as_used(db_session, otp_id)
+
+        try:
+            otp_activated = OtpModel.activate(db_session, otp_id, transaction_id)
+        except Exception as exc:
+            logger.error(
+                "OTP email was sent but activation failed for transaction %s (%s)",
+                transaction_id,
+                type(exc).__name__,
+            )
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="OTP email could not be sent; check Payment Service SMTP configuration and connectivity",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OTP could not be activated; request a new code",
             ) from exc
+        if not otp_activated:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="OTP could not be activated; request a new code",
+            )
 
         return {"message": "OTP sent to the registered email address", "expires_in_seconds": 300}
 
@@ -248,7 +292,7 @@ class PaymentService:
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=502, detail="Tuition Service returned invalid data")
         if tuition.get("status") == "PAID":
-            TransactionModel.release_processing(db_session, transaction_id)
+            self._finish_payment_as_failed(db_session, transaction_id, otp_record.otp_id)
             raise HTTPException(status_code=409, detail="Tuition has already been paid")
         if tuition.get("status") != "UNPAID":
             TransactionModel.release_processing(db_session, transaction_id)
@@ -339,6 +383,18 @@ class PaymentService:
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=404, detail="Tuition information not found")
         if claim_response.status_code == status.HTTP_409_CONFLICT:
+            try:
+                latest_tuition_response = requests.get(
+                    f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}",
+                    headers=headers,
+                    timeout=5,
+                )
+                latest_tuition = latest_tuition_response.json() if latest_tuition_response.status_code == status.HTTP_200_OK else None
+            except (requests.RequestException, ValueError, TypeError):
+                latest_tuition = None
+            if isinstance(latest_tuition, dict) and latest_tuition.get("status") == "PAID":
+                self._finish_payment_as_failed(db_session, transaction_id, otp_record.otp_id)
+                raise HTTPException(status_code=409, detail="Tuition has already been paid")
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=409, detail="Tuition has already been claimed or paid")
         if claim_response.status_code != status.HTTP_201_CREATED:
@@ -506,10 +562,11 @@ class PaymentService:
                     transaction_id,
                 )
 
-        except Exception:
-            logger.exception(
-                "Payment succeeded but confirmation email could not be sent for transaction %s",
+        except Exception as exc:
+            logger.error(
+                "Payment succeeded but confirmation email delivery failed for transaction %s (%s)",
                 transaction_id,
+                type(exc).__name__,
             )
 
         return {
@@ -523,6 +580,18 @@ class PaymentService:
             "amount": amount,
             "completed_at": saved_completed_at.isoformat(),
         }
+
+    @staticmethod
+    def _finish_payment_as_failed(db_session, transaction_id, otp_id):
+        if not TransactionModel.update_status(db_session, transaction_id, "FAILED"):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not update the payment status",
+            )
+        try:
+            OtpModel.mark_as_used(db_session, otp_id)
+        except Exception:
+            logger.exception("Could not invalidate OTP for failed transaction %s", transaction_id)
 
     @staticmethod
     def _release_tuition_claim(student_id, transaction_id, headers):

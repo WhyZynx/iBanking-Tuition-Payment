@@ -29,7 +29,7 @@ class OtpModel:
         result = db_session.execute(
             text("""
                 INSERT INTO otps (transaction_id, otp_code, expires_at, is_used)
-                VALUES (:transaction_id, :otp_code, :expires_at, FALSE)
+                VALUES (:transaction_id, :otp_code, :expires_at, TRUE)
             """),
             {
                 "transaction_id": transaction_id,
@@ -39,6 +39,31 @@ class OtpModel:
         )
         db_session.commit()
         return result.lastrowid
+
+    @staticmethod
+    def activate(db_session, otp_id, transaction_id):
+        db_session.execute(
+            text("""
+                UPDATE otps
+                SET is_used = TRUE
+                WHERE transaction_id = :transaction_id
+                  AND otp_id <> :id
+                  AND is_used = FALSE
+            """),
+            {"id": otp_id, "transaction_id": transaction_id},
+        )
+        result = db_session.execute(
+            text("""
+                UPDATE otps
+                SET is_used = FALSE
+                WHERE otp_id = :id
+                  AND is_used = TRUE
+                  AND expires_at > CURRENT_TIMESTAMP
+            """),
+            {"id": otp_id},
+        )
+        db_session.commit()
+        return result.rowcount == 1
 
     @staticmethod
     def verify(db_session, transaction_id, otp_code):
@@ -68,3 +93,18 @@ class OtpModel:
         result = db_session.execute(query, {"id": otp_id})
         db_session.commit()
         return result.rowcount == 1
+
+    @staticmethod
+    def invalidate_for_transaction(db_session, transaction_id, commit=True):
+        result = db_session.execute(
+            text("""
+                UPDATE otps
+                SET is_used = TRUE
+                WHERE transaction_id = :id
+                  AND is_used = FALSE
+            """),
+            {"id": transaction_id},
+        )
+        if commit:
+            db_session.commit()
+        return result.rowcount

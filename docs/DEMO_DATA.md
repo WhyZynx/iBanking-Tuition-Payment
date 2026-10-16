@@ -1,84 +1,75 @@
-# Demo data guide
+# Dữ liệu demo cục bộ
 
-This guide describes fictional data for local demonstrations. The SQL seeds are optional, insert-only scripts. Apply them only after initializing schemas in a fresh, disposable local MySQL environment. Never run them against shared or production databases.
+Bộ seed này dành cho demo local với `account_db` và `ibanking_tuition`. Không chạy lên E2E, shared hoặc production database. Seed không tạo giao dịch/OTP và không cập nhật bản ghi đã có. Mật khẩu chung là `password123`; User Service lưu và kiểm tra bcrypt hash.
 
-## Demo logins
+| Username | Họ tên | MSSV | Tài khoản | Số dư ban đầu (VND) | Học phí (VND) | Trạng thái đầu |
+| --- | --- | --- | --- | ---: | ---: | --- |
+| user01 | Nguyen Minh Anh | 524H0001 | 6202000001 | 25,000,000 | 18,500,000 | UNPAID |
+| user02 | Tran Ngoc Han | 524H0002 | 6202000002 | 15,000,000 | 16,500,000 | UNPAID |
+| user03 | Le Hoang Nam | 524H0003 | 6202000003 | 4,000,000 | 19,000,000 | UNPAID |
+| user04 | Pham Gia Linh | 524H0004 | 6202000004 | 30,000,000 | 17,500,000 | UNPAID |
+| user05 | Vo Thanh Tung | 723H0001 | 6202000005 | 12,000,000 | 14,000,000 | UNPAID |
+| user06 | Do Khanh Vy | 723H0002 | 6202000006 | 20,000,000 | 18,000,000 | PAID |
+| user07 | Bui Quoc Bao | 723H0003 | 6202000007 | 8,000,000 | 12,500,000 | UNPAID |
+| user08 | Huynh Thao My | 723H0004 | 6202000008 | 35,000,000 | 21,000,000 | UNPAID |
 
-The four `demo_` users added by `db/user/demo_seed.sql` share this demo-only password:
+Mỗi tài khoản được thêm là `ACTIVE` và mặc định. Tổng số dư ban đầu là 149,000,000 VND. User và Tuition seed dùng cùng MSSV, họ tên. Các service sở hữu database riêng nên không có khóa ngoại xuyên service. `payment_db` không cần seed.
 
-```text
-CampusDemo!2026
+## Xung đột cần kiểm tra trước
+
+Database có thể đã chứa dữ liệu cũ. Đặc biệt, seed cũ đã dùng username `user01` với tên `Nguyen Van A` và MSSV `524H0104`; bộ mới dùng `Nguyen Minh Anh` và `524H0001`. Nếu bản ghi cũ này còn tồn tại, **không chạy seed User**. Không sửa số dư, xóa hay đổi MSSV để ép seed chạy; hãy dùng một bộ database demo mới hoặc nhờ người quản lý dữ liệu xử lý xung đột thủ công.
+
+Trước khi áp dụng, chạy các truy vấn chỉ đọc sau trong Workbench và kiểm tra kết quả. Nếu username/MSSV/tài khoản hoặc hóa đơn đã tồn tại nhưng không khớp bảng trên, dừng và xử lý thủ công. Kiểm tra cả tài khoản mặc định khác đang gắn với các user này.
+
+```sql
+USE account_db;
+SELECT user_id, username, full_name, student_id
+FROM users
+WHERE username IN ('user01','user02','user03','user04','user05','user06','user07','user08')
+   OR student_id IN ('524H0001','524H0002','524H0003','524H0004','723H0001','723H0002','723H0003','723H0004');
+
+SELECT a.account_number, u.username, a.balance, a.is_default, a.status
+FROM accounts AS a
+JOIN users AS u ON u.user_id = a.user_id
+WHERE u.username IN ('user01','user02','user03','user04','user05','user06','user07','user08')
+   OR a.account_number IN ('6202000001','6202000002','6202000003','6202000004','6202000005','6202000006','6202000007','6202000008');
+
+USE ibanking_tuition;
+SELECT student_id, student_name, amount, status
+FROM tuition_bills
+WHERE student_id IN ('524H0001','524H0002','524H0003','524H0004','723H0001','723H0002','723H0003','723H0004');
 ```
 
-Their stored hashes use bcrypt cost 12, which matches the User Service `bcrypt.checkpw` verification. The legacy `user01` record is retained with its old hash for compatibility; its password is not specified by this guide.
+## Chạy seed trong MySQL Workbench
 
-| Username | Fictional name | Mapped student ID | Demo email |
-| --- | --- | --- | --- |
-| `demo_minh` | Minh Nguyen | `DEMO24001` | `demo.minh@example.test` |
-| `demo_linh` | Linh Tran | `DEMO24002` | `demo.linh@example.test` |
-| `demo_khoa` | Khoa Le | `DEMO24003` | `demo.khoa@example.test` |
-| `demo_hanh` | Hanh Pham | `DEMO24004` | `demo.hanh@example.test` |
+1. Sao lưu trước và chỉ dùng database demo local đã xác nhận đúng tên. Ưu tiên database demo mới; không áp dụng lên production hoặc database dùng chung.
+2. Mở `db/user/demo_seed.sql`, kiểm tra `USE account_db`, rồi chạy sau khi đã kiểm tra xung đột ở trên. Sau đó chạy `db/tuition/demo_seed.sql` với `ibanking_tuition`.
+3. Chạy từng seed trong transaction. Nếu có lỗi khóa trùng hoặc lỗi khác, dừng ngay và chạy `ROLLBACK;` trong cùng tab/session trước khi đóng tab. Chỉ để `COMMIT` cuối file chạy khi mọi câu lệnh đều thành công. Giải quyết xung đột thủ công; không xóa hay ghi đè dữ liệu cũ.
+4. Có thể chạy lại seed: `WHERE NOT EXISTS` bỏ qua user/bill đã khớp. Tài khoản đã tồn tại không bị reset số dư; hóa đơn đã chuyển từ `UNPAID` sang `PAID` được giữ nguyên. Dữ liệu khác dự kiến gây lỗi khóa trùng để tránh âm thầm bỏ qua xung đột.
+5. Xác nhận sau khi chạy bằng các truy vấn `SELECT` ở trên. Không cần thêm giao dịch hay OTP giả.
 
-The `.test` email domain is reserved and will not receive public email. To demonstrate OTP and successful confirmation, configure Payment Service to use a local SMTP sink/inbox and ensure it accepts these recipients. The account and tuition lookup flows do not require SMTP.
+Nếu Workbench không dừng khi gặp lỗi, chạy các câu lệnh đến trước `COMMIT` riêng theo từng phần; chỉ chạy `COMMIT` sau khi tất cả thành công. Khi có lỗi, chạy `ROLLBACK` ngay.
 
-## Bank accounts
+## Chạy demo bình thường
 
-| Owner | Account number | Initial balance | Notes |
-| --- | --- | ---: | --- |
-| Legacy `user01` | `1012345678` | 15,000,000 | Existing default demo account; mapped to `524H0104` |
-| Legacy `user01` | `1012345679` | 5,000,000 | Existing secondary demo account |
-| `demo_minh` | `6201000001` | 25,000,000 | Sufficient for its own bill and shared scenario |
-| `demo_minh` | `6201000002` | 4,000,000 | Insufficient for its own bill |
-| `demo_linh` | `6201000003` | 13,000,000 | Insufficient for its own bill |
-| `demo_khoa` | `6201000004` | 8,000,000 | Sufficient for its own bill |
-| `demo_hanh` | `6201000005` | 26,000,000 | Sufficient for its own bill and shared scenario |
+Seed là tùy chọn. Cấu hình `.env` local từ các file `.env.example`, không đưa credentials vào Git. Dùng database thông thường `account_db`, `ibanking_tuition`, `payment_db`; không cần biến `IBANKING_E2E_*`.
 
-The service links a payer to bank accounts through `accounts.user_id → users.user_id`. The optional `users.student_id` profile mapping is used by the frontend's “Pay for me” flow. A payer may search for another student's tuition bill without owning that student mapping.
+Mở bốn terminal từ thư mục gốc:
 
-## Tuition bills
+```powershell
+python -m uvicorn backend.user_service.main:app --host 127.0.0.1 --port 8001
+```
 
-The tuition seed retains the six existing fictional records and adds six `DEMO` records. A bill's primary key is `student_id`; no database relationship is created from a User row to a Tuition row because those services own separate databases.
+```powershell
+python -m uvicorn backend.tuition_service.main:app --host 127.0.0.1 --port 8002
+```
 
-| Student ID | Student | Amount | Initial status | User mapping |
-| --- | --- | ---: | --- | --- |
-| `524H0012` | Nguyen Minh Anh | 18,500,000 | UNPAID | None |
-| `524H0035` | Tran Gia Huy | 16,250,000 | UNPAID | None |
-| `524H0078` | Le Hoang Phuc | 19,750,000 | PAID | None |
-| `524H0104` | Pham Ngoc Han | 17,300,000 | UNPAID | Legacy `user01` |
-| `524H0126` | Vo Minh Khang | 21,000,000 | UNPAID | None |
-| `524H0159` | Bui Thanh Truc | 15,800,000 | PAID | None |
-| `DEMO24001` | Minh Nguyen | 12,000,000 | UNPAID | `demo_minh` |
-| `DEMO24002` | Linh Tran | 18,000,000 | UNPAID | `demo_linh` |
-| `DEMO24003` | Khoa Le | 7,500,000 | UNPAID | `demo_khoa` |
-| `DEMO24004` | Hanh Pham | 24,000,000 | UNPAID | `demo_hanh` |
-| `DEMO24005` | Shared Scenario Student | 15,000,000 | UNPAID | No owner; searched by payers |
-| `DEMO24006` | Paid Scenario Student | 11,000,000 | PAID | No owner |
+```powershell
+python -m uvicorn backend.payment_service.main:app --host 127.0.0.1 --port 8003
+```
 
-Amounts and balances are fictional VND values. Applying the seed never changes an existing bill's amount, name, or status.
+```powershell
+python -m http.server 5500 --directory frontend
+```
 
-## Scenario walkthroughs
-
-Each scenario starts from the initial seeded state unless stated otherwise. Successful payment, OTP, debit-ledger, and history records are created only by runtime API actions.
-
-1. **Profile-linked payment:** Log in as `demo_minh`, use “Pay for me,” and select account `6201000001`. The profile maps to `DEMO24001`; the 25,000,000 balance covers its 12,000,000 bill. Expected: a PENDING payment and OTP request; after OTP confirmation, the balance becomes 13,000,000, tuition becomes PAID, and Payment history contains SUCCESS.
-2. **Low-balance account choice:** As `demo_minh`, select secondary account `6201000002` for `DEMO24001`. Expected: payment creation rejects insufficient balance; no debit occurs.
-3. **Insufficient own bill:** Log in as `demo_linh` and use “Pay for me.” Its 13,000,000 account cannot cover `DEMO24002` at 18,000,000. Expected: insufficient-balance rejection and no debit.
-4. **Successful smaller bill:** Log in as `demo_khoa` and pay `DEMO24003` for 7,500,000 from `6201000004`. Expected after runtime OTP confirmation: SUCCESS and a 500,000 remaining balance.
-5. **Other-payer success:** Log in as `demo_hanh`, search for `DEMO24002`, and pay Linh's 18,000,000 bill from `6201000005`. Expected after runtime OTP confirmation: SUCCESS and an 8,000,000 remaining balance. The mapping does not restrict search-and-pay to the payer's own student ID.
-6. **Already-paid rejection:** Search for `DEMO24006` or `524H0078`. Expected: Payment Service rejects the bill before debit; no payment confirmation is needed.
-7. **Two payers competing for one bill:** From a fresh seeded state, create a payment for `DEMO24005` as `demo_minh` and another as `demo_hanh`, request both OTPs, then confirm both close together. Both accounts initially cover the bill. Expected: Tuition's claim permits at most one payment to proceed; at most one debit/payment succeeds. This is a runtime concurrency demonstration, not guaranteed by loading seed data alone.
-8. **Existing-payment history:** Complete any one successful scenario above, then open transaction history for that payer. Expected: the runtime-created SUCCESS transaction appears with its student, account, and amount.
-9. **Wrong or reused OTP:** Create a pending payment and request an OTP through the configured local SMTP sink. Submit an incorrect code, then try the valid code and try reusing it after success. Expected: invalid/reused codes are rejected and a consumed OTP cannot authorize another payment.
-10. **Legacy record compatibility:** Log in to `user01` only if its local demo password is already known. The seed preserves legacy account/student records without changing their balances; the documented shared password is for `demo_` users only.
-
-Paid bills and balances change during successful runtime demos. Use a fresh disposable setup when replaying scenarios that depend on the initial UNPAID status or balance. The seed deliberately does not reset them.
-
-## Safe local setup
-
-1. Create a fresh, disposable local MySQL environment and the service-owned databases `account_db`, `ibanking_tuition`, and `payment_db`.
-2. Initialize each schema using the existing service setup scripts. Do not point the service URLs at a shared/current application database.
-3. Run `db/user/demo_seed.sql` while `account_db` is selected and `db/tuition/demo_seed.sql` while `ibanking_tuition` is selected. Do not execute either seed against a database containing non-demo data.
-4. Configure local service `.env` files with the matching database names, a shared test JWT secret/internal API key, and a local SMTP sink if demonstrating OTP.
-5. Start User and Tuition Services before Payment Service, then use the scenario walkthroughs above.
-
-Seeds are sequentially repeatable: they insert only absent usernames, account numbers, or student IDs. They never update an existing row and do not insert Payment transactions, OTPs, or debit-ledger rows. If a reserved demo identifier already exists with unexpected data, inspect it manually rather than deleting or overwriting it.
+Mở `http://localhost:5500`. Các email `example.com` là địa chỉ giả; để demo OTP cần cấu hình một SMTP inbox local/kiểm thử có kiểm soát. Không dùng mailbox thật hoặc đưa SMTP secret vào repository.

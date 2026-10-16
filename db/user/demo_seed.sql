@@ -1,102 +1,114 @@
--- Optional local demo data for account_db. Insert-only: never update users or balances.
--- All added usernames are explicitly prefixed with demo_.
--- Shared demo login password: CampusDemo!2026
--- Hash generated with bcrypt (cost 12), compatible with User Service verify_password().
+-- Optional fictional demo users and accounts for account_db.
+-- Check for username, student ID, and account-number conflicts before running.
+-- This script inserts rows only; it never resets existing balances.
 
 USE account_db;
 START TRANSACTION;
 
--- Retain the original demo identity when absent. Its existing password is not documented here.
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-SELECT 'user01',
-       '$2b$12$PxWXN9r0ukABcgaalI/pEOwMnEOLN2R9bjZFCLOWNCstuW2r5huhG',
-       'Nguyen Van A', '0901234567', 'user01@example.com', '524H0104'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'user01')
-  AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = '524H0104');
-
+SELECT 'user01', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Nguyen Minh Anh', '0900000001', 'user01@example.com', '524H0001'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user01' AND student_id = '524H0001'
+      AND full_name = 'Nguyen Minh Anh' AND phone = '0900000001'
+      AND email = 'user01@example.com'
+);
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-SELECT 'demo_minh',
-       '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Minh Nguyen', '0902000001', 'demo.minh@example.com', 'DEMO24001'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_minh')
-  AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24001');
-
+SELECT 'user02', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Tran Ngoc Han', '0900000002', 'user02@example.com', '524H0002'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user02' AND student_id = '524H0002'
+      AND full_name = 'Tran Ngoc Han' AND phone = '0900000002'
+      AND email = 'user02@example.com'
+);
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-SELECT 'demo_linh',
-       '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Linh Tran', '0902000002', 'demo.linh@example.com', 'DEMO24002'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_linh')
-  AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24002');
-
+SELECT 'user03', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Le Hoang Nam', '0900000003', 'user03@example.com', '524H0003'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user03' AND student_id = '524H0003'
+      AND full_name = 'Le Hoang Nam' AND phone = '0900000003'
+      AND email = 'user03@example.com'
+);
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-SELECT 'demo_khoa',
-       '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Khoa Le', '0902000003', 'demo.khoa@example.com', 'DEMO24003'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_khoa')
-  AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24003');
-
+SELECT 'user04', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Pham Gia Linh', '0900000004', 'user04@example.com', '524H0004'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user04' AND student_id = '524H0004'
+      AND full_name = 'Pham Gia Linh' AND phone = '0900000004'
+      AND email = 'user04@example.com'
+);
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
-SELECT 'demo_hanh',
-       '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa',
-       'Hanh Pham', '0902000004', 'demo.hanh@example.com', 'DEMO24004'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = 'demo_hanh')
-  AND NOT EXISTS (SELECT 1 FROM users WHERE student_id = 'DEMO24004');
-
--- Keep the original account numbers, but only insert them if they are absent.
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '1012345678', user_id, 15000000.00, TRUE, 'ACTIVE'
-FROM users
-WHERE username = 'user01'
-  AND student_id = '524H0104'
-  AND password_hash = '$2b$12$PxWXN9r0ukABcgaalI/pEOwMnEOLN2R9bjZFCLOWNCstuW2r5huhG'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '1012345678');
-
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '1012345679', user_id, 5000000.00, FALSE, 'ACTIVE'
-FROM users
-WHERE username = 'user01'
-  AND student_id = '524H0104'
-  AND password_hash = '$2b$12$PxWXN9r0ukABcgaalI/pEOwMnEOLN2R9bjZFCLOWNCstuW2r5huhG'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '1012345679');
-
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '6201000001', user_id, 25000000.00, TRUE, 'ACTIVE'
-FROM users
-WHERE username = 'demo_minh'
-  AND student_id = 'DEMO24001'
-  AND password_hash = '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '6201000001');
-
-INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '6201000002', user_id, 4000000.00, FALSE, 'ACTIVE'
-FROM users
-WHERE username = 'demo_minh'
-  AND student_id = 'DEMO24001'
-  AND password_hash = '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '6201000002');
+SELECT 'user05', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Vo Thanh Tung', '0900000005', 'user05@example.com', '723H0001'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user05' AND student_id = '723H0001'
+      AND full_name = 'Vo Thanh Tung' AND phone = '0900000005'
+      AND email = 'user05@example.com'
+);
+INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
+SELECT 'user06', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Do Khanh Vy', '0900000006', 'user06@example.com', '723H0002'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user06' AND student_id = '723H0002'
+      AND full_name = 'Do Khanh Vy' AND phone = '0900000006'
+      AND email = 'user06@example.com'
+);
+INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
+SELECT 'user07', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Bui Quoc Bao', '0900000007', 'user07@example.com', '723H0003'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user07' AND student_id = '723H0003'
+      AND full_name = 'Bui Quoc Bao' AND phone = '0900000007'
+      AND email = 'user07@example.com'
+);
+INSERT INTO users (username, password_hash, full_name, phone, email, student_id)
+SELECT 'user08', '$2b$12$VAd7NjVsm7/.42McDH4OTO0SSO8a4pgHd91Qkiyuzge19UWefyX22',
+       'Huynh Thao My', '0900000008', 'user08@example.com', '723H0004'
+WHERE NOT EXISTS (
+    SELECT 1 FROM users
+    WHERE username = 'user08' AND student_id = '723H0004'
+      AND full_name = 'Huynh Thao My' AND phone = '0900000008'
+      AND email = 'user08@example.com'
+);
 
 INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '6201000003', user_id, 13000000.00, TRUE, 'ACTIVE'
-FROM users
-WHERE username = 'demo_linh'
-  AND student_id = 'DEMO24002'
-  AND password_hash = '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '6201000003');
-
+SELECT '6202000001', u.user_id, 25000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user01' AND u.student_id = '524H0001'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000001' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
 INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '6201000004', user_id, 8000000.00, TRUE, 'ACTIVE'
-FROM users
-WHERE username = 'demo_khoa'
-  AND student_id = 'DEMO24003'
-  AND password_hash = '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '6201000004');
-
+SELECT '6202000002', u.user_id, 15000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user02' AND u.student_id = '524H0002'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000002' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
 INSERT INTO accounts (account_number, user_id, balance, is_default, status)
-SELECT '6201000005', user_id, 26000000.00, TRUE, 'ACTIVE'
-FROM users
-WHERE username = 'demo_hanh'
-  AND student_id = 'DEMO24004'
-  AND password_hash = '$2b$12$8z0P56S92sjqyF.EAB.IneWszMkQ/ivxc.tQHeBwVpObmGry70yEa'
-  AND NOT EXISTS (SELECT 1 FROM accounts WHERE account_number = '6201000005');
+SELECT '6202000003', u.user_id, 4000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user03' AND u.student_id = '524H0003'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000003' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
+INSERT INTO accounts (account_number, user_id, balance, is_default, status)
+SELECT '6202000004', u.user_id, 30000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user04' AND u.student_id = '524H0004'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000004' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
+INSERT INTO accounts (account_number, user_id, balance, is_default, status)
+SELECT '6202000005', u.user_id, 12000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user05' AND u.student_id = '723H0001'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000005' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
+INSERT INTO accounts (account_number, user_id, balance, is_default, status)
+SELECT '6202000006', u.user_id, 20000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user06' AND u.student_id = '723H0002'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000006' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
+INSERT INTO accounts (account_number, user_id, balance, is_default, status)
+SELECT '6202000007', u.user_id, 8000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user07' AND u.student_id = '723H0003'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000007' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
+INSERT INTO accounts (account_number, user_id, balance, is_default, status)
+SELECT '6202000008', u.user_id, 35000000.00, TRUE, 'ACTIVE' FROM users AS u
+WHERE u.username = 'user08' AND u.student_id = '723H0004'
+  AND NOT EXISTS (SELECT 1 FROM accounts AS a WHERE a.account_number = '6202000008' AND a.user_id = u.user_id AND a.is_default = TRUE AND a.status = 'ACTIVE');
 
 COMMIT;

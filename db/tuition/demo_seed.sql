@@ -1,45 +1,32 @@
--- Optional local demo data for ibanking_tuition. Insert-only; never update bills.
+-- Optional tuition demo bills matching db/user/demo_seed.sql.
+-- Existing bills are never updated. On any duplicate-key error, run ROLLBACK and resolve it manually.
+
 USE ibanking_tuition;
 START TRANSACTION;
 
--- Original sample bills, preserved as optional inserts rather than schema initialization.
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0012', 'Nguyen Minh Anh', 18500000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0012');
+SELECT '524H0001', 'Nguyen Minh Anh', 18500000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0001' AND student_name = 'Nguyen Minh Anh' AND amount = 18500000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0035', 'Tran Gia Huy', 16250000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0035');
+SELECT '524H0002', 'Tran Ngoc Han', 16500000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0002' AND student_name = 'Tran Ngoc Han' AND amount = 16500000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0078', 'Le Hoang Phuc', 19750000.00, 'PAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0078');
+SELECT '524H0003', 'Le Hoang Nam', 19000000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0003' AND student_name = 'Le Hoang Nam' AND amount = 19000000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0104', 'Pham Ngoc Han', 17300000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0104');
+SELECT '524H0004', 'Pham Gia Linh', 17500000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0004' AND student_name = 'Pham Gia Linh' AND amount = 17500000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0126', 'Vo Minh Khang', 21000000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0126');
+SELECT '723H0001', 'Vo Thanh Tung', 14000000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '723H0001' AND student_name = 'Vo Thanh Tung' AND amount = 14000000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT '524H0159', 'Bui Thanh Truc', 15800000.00, 'PAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '524H0159');
-
--- Additional fictional bills linked to the demo user mappings in demo_seed.sql.
+SELECT '723H0002', 'Do Khanh Vy', 18000000, 'PAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '723H0002' AND student_name = 'Do Khanh Vy' AND amount = 18000000 AND status = 'PAID');
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24001', 'Minh Nguyen', 12000000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24001');
+SELECT '723H0003', 'Bui Quoc Bao', 12500000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '723H0003' AND student_name = 'Bui Quoc Bao' AND amount = 12500000 AND status IN ('UNPAID', 'PAID'));
 INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24002', 'Linh Tran', 18000000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24002');
-INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24003', 'Khoa Le', 7500000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24003');
-INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24004', 'Hanh Pham', 24000000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24004');
-INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24005', 'Shared Scenario Student', 15000000.00, 'UNPAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24005');
-INSERT INTO tuition_bills (student_id, student_name, amount, status)
-SELECT 'DEMO24006', 'Paid Scenario Student', 11000000.00, 'PAID'
-WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = 'DEMO24006');
+SELECT '723H0004', 'Huynh Thao My', 21000000, 'UNPAID'
+WHERE NOT EXISTS (SELECT 1 FROM tuition_bills WHERE student_id = '723H0004' AND student_name = 'Huynh Thao My' AND amount = 21000000 AND status IN ('UNPAID', 'PAID'));
 
 COMMIT;

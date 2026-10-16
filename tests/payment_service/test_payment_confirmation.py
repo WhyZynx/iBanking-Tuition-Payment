@@ -1,11 +1,14 @@
 import json
+import smtplib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from threading import Lock
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+import requests
 from fastapi.testclient import TestClient
 from jose import jwt
 
@@ -64,6 +67,7 @@ def payment_client(monkeypatch):
         completed_at=None,
     )
     state = {
+        "session": session,
         "tuition": FakeResponse(200, {
             "student_id": STUDENT_ID,
             "student_name": "Nguyen Van B",
@@ -277,6 +281,43 @@ def test_successful_payment_revalidates_and_finalizes_transaction(payment_client
     assert tuition_args["headers"]["X-Internal-API-Key"] == INTERNAL_KEY
 
 
+@pytest.mark.parametrize(
+    "smtp_error",
+    [
+        TimeoutError("SMTP_PASSWORD=do-not-log"),
+        smtplib.SMTPAuthenticationError(535, b"SMTP_PASSWORD=do-not-log"),
+        RuntimeError("SMTP_PASSWORD=do-not-log"),
+    ],
+)
+def test_success_email_failure_keeps_payment_success_and_does_not_repeat_debit(
+    payment_client, monkeypatch, caplog, smtp_error
+):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    email = Mock(side_effect=smtp_error)
+    monkeypatch.setattr(paymentService, "send_payment_success_email", email)
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert transaction.status == "SUCCESS"
+    assert status_updates == ["SUCCESS"]
+    assert len([call for call in calls["post"] if "/debit" in call[0]]) == 1
+    assert len(calls["put"]) == 1
+    email.assert_called_once()
+    assert "SMTP_PASSWORD" not in response.text
+    assert "do-not-log" not in response.text
+    assert "SMTP_PASSWORD" not in caplog.text
+    assert "do-not-log" not in caplog.text
+
+    retry_response = confirm(client, headers)
+
+    assert retry_response.status_code == 409
+    assert len([call for call in calls["post"] if "/debit" in call[0]]) == 1
+    assert len(calls["put"]) == 1
+    assert status_updates == ["SUCCESS"]
+
+
 @pytest.mark.parametrize("otp_code", ["999999", "expired", "used"])
 def test_invalid_otp_returns_400_without_external_side_effects(payment_client, otp_code):
     client, transaction, state, calls, status_updates, headers = payment_client
@@ -332,7 +373,7 @@ def test_insufficient_revalidated_balance_leaves_payment_pending(payment_client)
 
 
 def test_paid_tuition_is_rejected_before_debit(payment_client):
-    client, transaction, state, calls, _, headers = payment_client
+    client, transaction, state, calls, status_updates, headers = payment_client
     state["tuition"] = FakeResponse(200, {
         "student_id": STUDENT_ID,
         "student_name": "Nguyen Van B",
@@ -343,9 +384,45 @@ def test_paid_tuition_is_rejected_before_debit(payment_client):
     response = confirm(client, headers)
 
     assert response.status_code == 409
+    assert response.json()["detail"] == "Tuition has already been paid"
     assert calls["post"] == []
     assert calls["put"] == []
-    assert transaction.status == "PENDING"
+    assert transaction.status == "FAILED"
+    assert state["otp_used"] is True
+    assert status_updates == ["FAILED"]
+
+
+def test_paid_tuition_after_claim_conflict_fails_without_debit(payment_client, monkeypatch):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    unpaid = {
+        "student_id": STUDENT_ID,
+        "student_name": "Nguyen Van B",
+        "amount": "5000000.25",
+        "status": "UNPAID",
+    }
+    paid = {**unpaid, "status": "PAID"}
+    tuition_responses = iter([FakeResponse(200, unpaid), FakeResponse(200, paid)])
+
+    def get(url, **kwargs):
+        calls["get"].append((url, kwargs))
+        if "/api/v1/tuition/" in url:
+            return next(tuition_responses)
+        if "/api/v1/internal/accounts/" in url:
+            return state["account"]
+        raise AssertionError(f"Unexpected GET URL: {url}")
+
+    state["tuition_claim"] = FakeResponse(409)
+    monkeypatch.setattr(paymentService.requests, "get", get)
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Tuition has already been paid"
+    assert transaction.status == "FAILED"
+    assert state["otp_used"] is True
+    assert len(calls["post"]) == 1
+    assert calls["put"] == []
+    assert status_updates == ["FAILED"]
 
 
 def test_missing_tuition_is_rejected_before_debit(payment_client):
@@ -416,6 +493,114 @@ def test_transaction_already_successful_cannot_be_charged_again(payment_client):
     assert calls["put"] == []
 
 
+def test_payment_status_after_losing_transaction_is_failed(payment_client):
+    client, transaction, _, _, _, headers = payment_client
+    transaction.status = "FAILED"
+    transaction.completed_at = datetime.now()
+
+    response = client.get(f"/api/v1/payments/{TRANSACTION_ID}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "FAILED"
+    assert response.json()["completed_at"] is not None
+
+    history = client.get("/api/v1/transactions/me", headers=headers)
+
+    assert history.status_code == 200
+    assert history.json()["items"][0]["status"] == "FAILED"
+
+
+@pytest.mark.parametrize("read_history_first", [False, True])
+def test_pending_losing_transaction_is_failed_when_tuition_later_paid(
+    payment_client, monkeypatch, read_history_first
+):
+    client, transaction, state, _, status_updates, headers = payment_client
+    transaction.status = "PENDING"
+    commits_before = state["session"].commits
+    state["tuition"] = FakeResponse(200, {
+        "student_id": STUDENT_ID,
+        "student_name": "Nguyen Van B",
+        "amount": "5000000.25",
+        "status": "PAID",
+    })
+
+    def fail_pending(_session, transaction_id, commit=True):
+        assert transaction_id == TRANSACTION_ID
+        if transaction.status != "PENDING":
+            return False
+        transaction.status = "FAILED"
+        transaction.completed_at = datetime.now()
+        if commit:
+            _session.commit()
+        status_updates.append("FAILED")
+        return True
+
+    def invalidate_otp(_session, transaction_id, commit=True):
+        assert transaction_id == TRANSACTION_ID
+        state["otp_used"] = True
+        return 1
+
+    monkeypatch.setattr(transactionModel.TransactionModel, "fail_pending", fail_pending)
+    monkeypatch.setattr(otpModel.OtpModel, "invalidate_for_transaction", invalidate_otp)
+
+    if read_history_first:
+        history = client.get("/api/v1/transactions/me", headers=headers)
+        assert history.status_code == 200
+        assert history.json()["items"][0]["status"] == "FAILED"
+
+    response = client.get(f"/api/v1/payments/{TRANSACTION_ID}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "FAILED"
+    assert response.json()["completed_at"] is not None
+    assert transaction.status == "FAILED"
+    assert state["otp_used"] is True
+    assert status_updates == ["FAILED"]
+    assert state["session"].commits == commits_before + 1
+
+
+@pytest.mark.parametrize("transaction_status", ["PROCESSING", "SUCCESS"])
+def test_status_reconciliation_does_not_change_processing_or_success(
+    payment_client, transaction_status
+):
+    client, transaction, state, _, status_updates, headers = payment_client
+    transaction.status = transaction_status
+    state["tuition"] = FakeResponse(200, {"status": "PAID"})
+
+    response = client.get(f"/api/v1/payments/{TRANSACTION_ID}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == transaction_status
+    assert status_updates == []
+    assert state["otp_used"] is False
+
+
+def test_status_reconciliation_keeps_pending_when_tuition_is_unpaid(payment_client):
+    client, transaction, _, _, status_updates, headers = payment_client
+
+    response = client.get(f"/api/v1/payments/{TRANSACTION_ID}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING"
+    assert transaction.status == "PENDING"
+    assert status_updates == []
+
+
+def test_status_reconciliation_keeps_pending_when_tuition_cannot_be_verified(
+    payment_client,
+):
+    client, transaction, state, _, status_updates, headers = payment_client
+    state["get_exception_contains"] = "/api/v1/tuition/"
+    state["get_exception"] = requests.Timeout("Tuition Service timed out")
+
+    response = client.get(f"/api/v1/payments/{TRANSACTION_ID}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "PENDING"
+    assert transaction.status == "PENDING"
+    assert status_updates == []
+
+
 def test_same_transaction_confirmed_concurrently_is_debited_once(payment_client):
     client, transaction, state, calls, status_updates, headers = payment_client
 
@@ -475,14 +660,39 @@ def test_unknown_debit_result_marks_transaction_for_reconciliation(payment_clien
     assert "outcome is unknown" in response.json()["detail"]
 
 
-def test_tuition_failure_after_debit_marks_failed_and_logs_partial_payment(payment_client, caplog):
+def test_tuition_failure_after_debit_marks_failed_and_logs_partial_payment(
+    payment_client, caplog, monkeypatch
+):
     client, transaction, state, calls, status_updates, headers = payment_client
+    balance = Decimal("9000000.00")
+    debit_ledger = []
+    refunds = []
+    original_post = paymentService.requests.post
+
+    def debit_then_fail_tuition_claim(url, **kwargs):
+        nonlocal balance
+        if url.endswith("/claim"):
+            return original_post(url, **kwargs)
+        if "/refund" in url:
+            refunds.append(url)
+            return FakeResponse(200, {"success": True})
+        assert url.endswith("/debit")
+        debit_payload = json.loads(kwargs["data"])
+        balance -= Decimal(str(debit_payload["amount"]))
+        debit_ledger.append(debit_payload["transactionId"])
+        return FakeResponse(200, {"success": True})
+
+    monkeypatch.setattr(paymentService.requests, "post", debit_then_fail_tuition_claim)
     state["tuition_pay"] = FakeResponse(500)
 
     response = confirm(client, headers)
 
     assert response.status_code == 502
-    assert calls["post"]
+    assert len(debit_ledger) == 1
+    assert debit_ledger == [TRANSACTION_ID]
+    assert balance == Decimal("3999999.75")
+    assert refunds == []
+    assert state["tuition"].payload["status"] == "UNPAID"
     assert calls["put"]
     assert transaction.status == "RECONCILIATION_REQUIRED"
     assert transaction.completed_at is None
@@ -490,6 +700,14 @@ def test_tuition_failure_after_debit_marks_failed_and_logs_partial_payment(payme
     assert status_updates == ["RECONCILIATION_REQUIRED"]
     assert "Partial payment: debit succeeded" in caplog.text
     assert "requires reconciliation" in response.json()["detail"]
+
+    retry_response = confirm(client, headers)
+
+    assert retry_response.status_code == 409
+    assert len(debit_ledger) == 1
+    assert balance == Decimal("3999999.75")
+    assert refunds == []
+    assert len(calls["put"]) == 1
 
 
 def test_tuition_timeout_after_debit_marks_failed(payment_client):

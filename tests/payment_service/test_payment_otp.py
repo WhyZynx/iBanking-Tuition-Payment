@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import smtplib
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -102,9 +103,18 @@ def otp_client(monkeypatch):
             "transaction_id": transaction_id,
             "code": code,
             "expires_at": expires_at,
-            "used": False,
+            "used": True,
         })
         return otp_id
+
+    def activate_otp(_session, otp_id, transaction_id):
+        for record in records:
+            if record["transaction_id"] == transaction_id and record["id"] != otp_id:
+                record["used"] = True
+            elif record["id"] == otp_id and record["expires_at"] > datetime.now():
+                record["used"] = False
+                return True
+        return False
 
     def verify_otp(_session, transaction_id, code):
         now = datetime.now()
@@ -130,6 +140,7 @@ def otp_client(monkeypatch):
     monkeypatch.setattr(paymentController.TransactionModel, "release_processing", release_transaction)
     monkeypatch.setattr(otpModel.OtpModel, "is_active_code", is_active_code)
     monkeypatch.setattr(otpModel.OtpModel, "create", create_otp)
+    monkeypatch.setattr(otpModel.OtpModel, "activate", activate_otp)
     monkeypatch.setattr(otpModel.OtpModel, "verify", verify_otp)
     monkeypatch.setattr(otpModel.OtpModel, "mark_as_used", mark_used)
     monkeypatch.setattr(paymentService.requests, "get", lambda *args, **kwargs: FakeEmailResponse())
@@ -220,6 +231,59 @@ def test_requesting_otp_again_invalidates_the_previous_code(otp_client):
     assert records[1]["used"] is False
 
 
+@pytest.mark.parametrize(
+    "smtp_error",
+    [
+        TimeoutError("SMTP_PASSWORD=do-not-log"),
+        smtplib.SMTPAuthenticationError(535, b"SMTP_PASSWORD=do-not-log"),
+        RuntimeError("SMTP_PASSWORD=do-not-log"),
+    ],
+)
+def test_otp_smtp_failure_returns_error_and_leaves_code_inactive(
+    otp_client, monkeypatch, caplog, smtp_error
+):
+    client, transaction, records, sent_emails, headers = otp_client
+    monkeypatch.setattr(
+        paymentService,
+        "send_otp_email",
+        Mock(side_effect=smtp_error),
+    )
+
+    response = client.post(f"/api/v1/payments/{TRANSACTION_ID}/otp", headers=headers)
+
+    assert response.status_code == 502
+    assert "SMTP_PASSWORD" not in response.text
+    assert "do-not-log" not in response.text
+    assert "SMTP_PASSWORD" not in caplog.text
+    assert "do-not-log" not in caplog.text
+    assert len(records) == 1
+    assert records[0]["used"] is True
+    assert otpModel.OtpModel.verify(None, TRANSACTION_ID, records[0]["code"]) is None
+    assert sent_emails == []
+    assert transaction.status == "PENDING"
+
+
+def test_otp_is_not_reported_successful_if_activation_fails(otp_client, monkeypatch, caplog):
+    client, transaction, records, sent_emails, headers = otp_client
+    monkeypatch.setattr(
+        otpModel.OtpModel,
+        "activate",
+        Mock(side_effect=RuntimeError("SMTP_PASSWORD=do-not-log")),
+    )
+
+    response = client.post(f"/api/v1/payments/{TRANSACTION_ID}/otp", headers=headers)
+
+    assert response.status_code == 503
+    assert "SMTP_PASSWORD" not in response.text
+    assert "do-not-log" not in response.text
+    assert "SMTP_PASSWORD" not in caplog.text
+    assert "do-not-log" not in caplog.text
+    assert sent_emails
+    assert records[0]["used"] is True
+    assert otpModel.OtpModel.verify(None, TRANSACTION_ID, records[0]["code"]) is None
+    assert transaction.status == "PENDING"
+
+
 @pytest.mark.parametrize("invalid_kind", ["expired", "wrong", "used"])
 def test_confirm_rejects_expired_wrong_or_used_otp_without_payment_actions(
     otp_client, monkeypatch, invalid_kind
@@ -254,13 +318,19 @@ def test_confirm_rejects_expired_wrong_or_used_otp_without_payment_actions(
     update_status.assert_not_called()
 
 
-def test_valid_otp_is_not_consumed_when_tuition_revalidation_fails(otp_client, monkeypatch):
+def test_paid_tuition_ends_transaction_and_consumes_otp_without_debit(otp_client, monkeypatch):
     client, transaction, records, _, headers = otp_client
     client.post(f"/api/v1/payments/{TRANSACTION_ID}/otp", headers=headers)
     otp_code = records[0]["code"]
     debit = Mock(side_effect=AssertionError("STEP 5 must not debit accounts"))
     monkeypatch.setattr(paymentService.requests, "post", debit)
-    update_status = Mock(side_effect=AssertionError("STEP 5 must not update transaction status"))
+    def fail_transaction(_session, transaction_id, new_status):
+        assert transaction_id == TRANSACTION_ID
+        assert transaction.status == "PROCESSING"
+        transaction.status = new_status
+        return True
+
+    update_status = Mock(side_effect=fail_transaction)
     monkeypatch.setattr(paymentController.TransactionModel, "update_status", update_status)
     monkeypatch.setattr(
         paymentService.requests,
@@ -275,10 +345,12 @@ def test_valid_otp_is_not_consumed_when_tuition_revalidation_fails(otp_client, m
     )
 
     assert response.status_code == 409
-    assert records[0]["used"] is False
-    assert transaction.status == "PENDING"
+    assert response.json()["detail"] == "Tuition has already been paid"
+    assert records[0]["used"] is True
+    assert transaction.status == "FAILED"
     debit.assert_not_called()
-    update_status.assert_not_called()
+    update_status.assert_called_once()
+    assert update_status.call_args.args[1:] == (TRANSACTION_ID, "FAILED")
 
 
 def test_otp_verification_query_requires_unused_matching_unexpired_code():

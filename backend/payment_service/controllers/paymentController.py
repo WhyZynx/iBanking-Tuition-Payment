@@ -95,6 +95,10 @@ def get_payment_status(
     db_session: Session = Depends(get_db),
 ):
     transaction = get_user_transaction(db_session, transaction_id, current_user_id)
+    if transaction.status == "PENDING" and payment_service.fail_pending_if_tuition_paid(
+        db_session, transaction.transaction_id, transaction.student_id
+    ):
+        transaction = TransactionModel.find_by_id(db_session, transaction_id)
     return {
         "transaction_id": transaction.transaction_id,
         "student_id": transaction.student_id,
@@ -172,4 +176,16 @@ def get_transaction_history(
     current_user_id: int = Depends(get_current_user_id),
     db_session: Session = Depends(get_db),
 ):
-    return {"items": TransactionModel.find_by_user_id(db_session, current_user_id)}
+    items = TransactionModel.find_by_user_id(db_session, current_user_id)
+    for item in items:
+        if item["status"] == "PENDING" and payment_service.fail_pending_if_tuition_paid(
+            db_session, item["transactionId"], item["studentId"]
+        ):
+            transaction = TransactionModel.find_by_id(db_session, item["transactionId"])
+            item["status"] = transaction.status
+            item["completedAt"] = (
+                transaction.completed_at.isoformat()
+                if transaction.completed_at
+                else None
+            )
+    return {"items": items}

@@ -162,25 +162,6 @@
 		}
 	}
 
-	function failPendingTransactionsOnExit() {
-		const token = sessionStorage.getItem(TOKEN_KEY);
-
-		if (!token) {
-			return;
-		}
-
-		fetch(
-			`${PAYMENT_API_URL}/api/v1/payments/cancel-pending`,
-			{
-				method: 'POST',
-				headers: {
-					'Authorization': `Bearer ${token}`
-				},
-				keepalive: true
-			}
-		).catch(() => { });
-	}
-
 	async function logout() {
 		await failPendingTransactions();
 
@@ -236,11 +217,6 @@
 				)
 			);
 	}
-
-	window.addEventListener(
-		'pagehide',
-		failPendingTransactionsOnExit
-	);
 
 	document.addEventListener(
 		'DOMContentLoaded',

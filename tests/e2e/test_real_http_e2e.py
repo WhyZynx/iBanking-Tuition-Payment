@@ -28,15 +28,19 @@ from sqlalchemy.engine import URL, make_url
 
 APPROVAL = "I_APPROVE_WRITES_TO_THE_ISOLATED_E2E_DATABASES"
 DATABASE_NAMES = {
-    "user": "account_db_e2e_test",
-    "tuition": "ibanking_tuition_e2e_test",
-    "payment": "payment_db_e2e_test",
+    "user": "ibanking_account_db_e2e_test",
+    "tuition": "ibanking_tuition_db_e2e_test",
+    "payment": "ibanking_payment_db_e2e_test",
 }
 PROTECTED_DATABASES = {
     "account_db",
     "account_db_test",
     "ibanking_tuition",
     "payment_db",
+    "ibanking_account_db",
+    "ibanking_account_db_test",
+    "ibanking_tuition_db",
+    "ibanking_payment_db",
 }
 TIMEOUT = 10
 READONLY_DATABASE_URLS = {

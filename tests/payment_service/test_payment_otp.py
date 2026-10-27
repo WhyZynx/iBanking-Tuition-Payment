@@ -411,3 +411,42 @@ def test_email_helper_builds_expected_message(monkeypatch):
     assert TRANSACTION_ID in message.get_content()
     assert "5 minutes" in message.get_content()
     assert sent["login"] == ("sender@example.test", "placeholder")
+
+
+def test_email_helper_supports_mailpit_without_tls_or_authentication(monkeypatch):
+    sent = {}
+
+    class FakeSMTP:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def starttls(self):
+            sent["starttls"] = True
+
+        def login(self, *_args):
+            sent["login"] = True
+
+        def send_message(self, message):
+            sent["message"] = message
+
+    monkeypatch.setattr(email_service, "SMTP_HOST", "mailpit")
+    monkeypatch.setattr(email_service, "SMTP_PORT", 1025)
+    monkeypatch.setattr(email_service, "SMTP_USERNAME", "")
+    monkeypatch.setattr(email_service, "SMTP_PASSWORD", "")
+    monkeypatch.setattr(email_service, "SMTP_FROM_EMAIL", "ibanking@example.test")
+    monkeypatch.setattr(email_service, "SMTP_STARTTLS", False)
+    monkeypatch.setattr(email_service.smtplib, "SMTP", lambda *args, **kwargs: FakeSMTP())
+
+    email_service.send_otp_email(
+        "payer@example.com",
+        TRANSACTION_ID,
+        "004821",
+        datetime.now() + timedelta(minutes=5),
+    )
+
+    assert sent["message"]["To"] == "payer@example.com"
+    assert "starttls" not in sent
+    assert "login" not in sent

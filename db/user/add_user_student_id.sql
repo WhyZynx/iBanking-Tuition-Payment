@@ -1,4 +1,4 @@
-USE account_db;
+USE ibanking_account_db;
 
 ALTER TABLE users
     ADD COLUMN student_id VARCHAR(20) NULL,

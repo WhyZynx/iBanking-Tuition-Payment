@@ -372,7 +372,7 @@ def test_concurrent_700k_debits_from_1m_account_never_overdraw(client):
 
 
 def _mysql_test_database_url() -> str:
-    """Require the dedicated account_db_test database."""
+    """Require the dedicated ibanking_account_db_test database."""
     database_url = os.getenv("USER_SERVICE_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("Set USER_SERVICE_TEST_DATABASE_URL to an isolated MySQL test database")
@@ -381,8 +381,8 @@ def _mysql_test_database_url() -> str:
     database_name = unquote(parsed.path.lstrip("/"))
     if parsed.scheme not in {"mysql", "mysql+pymysql"}:
         pytest.skip("USER_SERVICE_TEST_DATABASE_URL must use MySQL with PyMySQL")
-    if database_name.lower() != "account_db_test":
-        pytest.skip("MySQL concurrency tests require the exact database name account_db_test")
+    if database_name.lower() != "ibanking_account_db_test":
+        pytest.skip("MySQL concurrency tests require the exact database name ibanking_account_db_test")
     return database_url
 
 
@@ -401,9 +401,9 @@ def mysql_concurrency_database(monkeypatch):
     # Verify server-side identity before schema creation or row mutation.
     with test_engine.connect() as connection:
         actual_database = connection.execute(text("SELECT DATABASE()")).scalar_one_or_none()
-    if actual_database != "account_db_test":
+    if actual_database != "ibanking_account_db_test":
         test_engine.dispose()
-        pytest.fail("Connected MySQL database identity is not account_db_test")
+        pytest.fail("Connected MySQL database identity is not ibanking_account_db_test")
 
     TestSession = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(bind=test_engine)
@@ -426,7 +426,7 @@ def mysql_concurrency_database(monkeypatch):
         db.close()
         test_engine.dispose()
         pytest.fail(
-            "account_db_test contains reserved concurrency fixture records; "
+            "ibanking_account_db_test contains reserved concurrency fixture records; "
             "refusing to overwrite or clean them up"
         )
     user = User(

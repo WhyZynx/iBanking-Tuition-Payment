@@ -1,10 +1,10 @@
--- Forward-only integrity migration for payment_db.
+-- Forward-only integrity migration for ibanking_payment_db.
 -- SAFETY: inspect the preflight result first. This script signals an error and
 -- stops before ALTER TABLE if any required value is NULL, any OTP is orphaned,
 -- or an OTP foreign key already exists. It never changes historical row values.
 -- Run only against an explicitly selected, backed-up target database.
 
-USE payment_db;
+USE ibanking_payment_db;
 
 DROP PROCEDURE IF EXISTS assert_payment_integrity_preflight;
 DELIMITER $$

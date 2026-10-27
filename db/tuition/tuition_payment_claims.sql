@@ -1,4 +1,4 @@
-USE ibanking_tuition;
+USE ibanking_tuition_db;
 
 CREATE TABLE IF NOT EXISTS tuition_payment_claims (
     student_id VARCHAR(20) PRIMARY KEY,

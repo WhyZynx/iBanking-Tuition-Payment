@@ -30,6 +30,7 @@ SMTP_HOST = getenv("SMTP_HOST") or ""
 SMTP_USERNAME = getenv("SMTP_USERNAME") or ""
 SMTP_PASSWORD = getenv("SMTP_PASSWORD") or ""
 SMTP_FROM_EMAIL = getenv("SMTP_FROM_EMAIL") or ""
+SMTP_STARTTLS = getenv("SMTP_STARTTLS", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 smtp_port_value: str = getenv("SMTP_PORT") or "587"
 SMTP_PORT: int = int(smtp_port_value)

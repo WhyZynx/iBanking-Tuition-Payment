@@ -1,8 +1,8 @@
-CREATE DATABASE IF NOT EXISTS ibanking_tuition
+CREATE DATABASE IF NOT EXISTS ibanking_tuition_db
 CHARACTER SET utf8mb4
 COLLATE utf8mb4_unicode_ci;
 
-USE ibanking_tuition;
+USE ibanking_tuition_db;
 
 CREATE TABLE IF NOT EXISTS tuition_bills (
     student_id VARCHAR(20) PRIMARY KEY,

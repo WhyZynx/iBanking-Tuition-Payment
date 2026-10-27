@@ -1,8 +1,8 @@
--- Optional fictional demo users and accounts for account_db.
+-- Optional fictional demo users and accounts for ibanking_account_db.
 -- Check for username, student ID, and account-number conflicts before running.
 -- This script inserts rows only; it never resets existing balances.
 
-USE account_db;
+USE ibanking_account_db;
 START TRANSACTION;
 
 INSERT INTO users (username, password_hash, full_name, phone, email, student_id)

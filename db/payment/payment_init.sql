@@ -1,6 +1,6 @@
 -- Tạo database riêng cho Payment Service
-CREATE DATABASE IF NOT EXISTS payment_db;
-USE payment_db;
+CREATE DATABASE IF NOT EXISTS ibanking_payment_db;
+USE ibanking_payment_db;
 
 -- Tạo bảng Lưu lịch sử giao dịch
 CREATE TABLE IF NOT EXISTS transactions (

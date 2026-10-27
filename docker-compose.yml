@@ -1,12 +1,9 @@
 services:
   mysql:
     image: mysql:8.4
-    container_name: ibanking-mysql
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
-    ports:
-      - "${MYSQL_PORT:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./db/docker-init:/docker-entrypoint-initdb.d:ro
@@ -23,10 +20,9 @@ services:
     build:
       context: .
       dockerfile: backend/user_service/Dockerfile
-    container_name: ibanking-user-service
     restart: unless-stopped
     environment:
-      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/account_db"
+      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_account_db"
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -46,10 +42,9 @@ services:
     build:
       context: .
       dockerfile: backend/tuition_service/Dockerfile
-    container_name: ibanking-tuition-service
     restart: unless-stopped
     environment:
-      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition"
+      DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition_db"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
     depends_on:
       mysql:
@@ -67,19 +62,19 @@ services:
     build:
       context: .
       dockerfile: backend/payment_service/Dockerfile
-    container_name: ibanking-payment-service
     restart: unless-stopped
     environment:
-      PAYMENT_DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/payment_db"
+      PAYMENT_DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_payment_db"
       USER_SERVICE_URL: http://user-service:8001
       TUITION_SERVICE_URL: http://tuition-service:8002
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-ibanking@example.test}
+      SMTP_STARTTLS: ${SMTP_STARTTLS:-false}
     depends_on:
       mysql:
         condition: service_healthy
@@ -87,20 +82,51 @@ services:
         condition: service_healthy
       tuition-service:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=3)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - ibanking-network
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_WEB_PORT:-8025}:8025"
+    expose:
+      - "1025"
+    healthcheck:
+      test: [ "CMD", "/mailpit", "readyz" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - ibanking-network
 
   nginx:
     image: nginx:alpine
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
-      - user-service
-      - tuition-service
-      - payment-service
+      payment-service:
+        condition: service_healthy
+      tuition-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - ibanking-network
 

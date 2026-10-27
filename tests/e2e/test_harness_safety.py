@@ -38,19 +38,19 @@ def test_readonly_grants_allow_only_select_on_target_database():
         "NONE",
         [
             "GRANT USAGE ON *.* TO `reader`@`localhost`",
-            "GRANT SELECT ON `account_db_e2e_test`.* TO `reader`@`localhost`",
+            "GRANT SELECT ON `ibanking_account_db_e2e_test`.* TO `reader`@`localhost`",
         ],
     )
-    assert _readonly_grants_verified(connection, "account_db_e2e_test")
+    assert _readonly_grants_verified(connection, "ibanking_account_db_e2e_test")
 
     writable = FakeConnection(
         "NONE",
         [
             "GRANT USAGE ON *.* TO `reader`@`localhost`",
-            "GRANT SELECT, INSERT ON `account_db_e2e_test`.* TO `reader`@`localhost`",
+            "GRANT SELECT, INSERT ON `ibanking_account_db_e2e_test`.* TO `reader`@`localhost`",
         ],
     )
-    assert not _readonly_grants_verified(writable, "account_db_e2e_test")
+    assert not _readonly_grants_verified(writable, "ibanking_account_db_e2e_test")
 
 
 def test_readonly_grants_reject_active_roles():
@@ -58,11 +58,11 @@ def test_readonly_grants_reject_active_roles():
         "`e2e_reader_role`@`%`",
         ["GRANT USAGE ON *.* TO `reader`@`localhost`"],
     )
-    assert not _readonly_grants_verified(connection, "account_db_e2e_test")
+    assert not _readonly_grants_verified(connection, "ibanking_account_db_e2e_test")
 
 
 def test_service_log_redacts_credentials_and_tokens_before_write():
-    database_url = "mysql+pymysql://demo:db-secret@127.0.0.1/account_db_e2e_test"
+    database_url = "mysql+pymysql://demo:db-secret@127.0.0.1/ibanking_account_db_e2e_test"
     api_key = "internal-secret"
     token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature"
     raw = (

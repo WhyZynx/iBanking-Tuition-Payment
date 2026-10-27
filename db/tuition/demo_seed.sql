@@ -1,7 +1,7 @@
 -- Optional tuition demo bills matching db/user/demo_seed.sql.
 -- Existing bills are never updated. On any duplicate-key error, run ROLLBACK and resolve it manually.
 
-USE ibanking_tuition;
+USE ibanking_tuition_db;
 START TRANSACTION;
 
 INSERT INTO tuition_bills (student_id, student_name, amount, status)

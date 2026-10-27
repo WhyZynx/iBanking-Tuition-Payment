@@ -1,5 +1,5 @@
-CREATE DATABASE IF NOT EXISTS account_db;
-USE account_db;
+CREATE DATABASE IF NOT EXISTS ibanking_account_db;
+USE ibanking_account_db;
 
 CREATE TABLE IF NOT EXISTS users (
 	user_id BIGINT AUTO_INCREMENT PRIMARY KEY,

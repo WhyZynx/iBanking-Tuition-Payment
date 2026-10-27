@@ -1,4 +1,4 @@
-﻿USE account_db;
+﻿USE ibanking_account_db;
 
 CREATE TABLE IF NOT EXISTS account_debits (
     transaction_id VARCHAR(100) PRIMARY KEY,

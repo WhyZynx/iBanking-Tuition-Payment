@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from backend.user_service.controllers.account_controller import internal_router as internal_account_router
 from backend.user_service.controllers.account_controller import router as account_router
@@ -38,4 +39,6 @@ app.include_router(internal_account_router)
 
 @app.get("/health", tags=["Health"], summary="Check service health")
 def health() -> dict[str, str]:
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1"))
     return {"status": "ok"}

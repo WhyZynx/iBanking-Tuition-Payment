@@ -7,7 +7,7 @@ def test_tuition_connection_uses_service_database_url(monkeypatch):
     monkeypatch.setattr(
         tuition_database,
         "DATABASE_URL",
-        "mysql+pymysql://db_user:test-password@db.example:3307/ibanking_tuition",
+        "mysql+pymysql://db_user:test-password@db.example:3307/ibanking_tuition_db",
     )
 
     with patch.object(tuition_database.pymysql, "connect") as connect:
@@ -18,7 +18,7 @@ def test_tuition_connection_uses_service_database_url(monkeypatch):
         port=3307,
         user="db_user",
         password="test-password",
-        database="ibanking_tuition",
+        database="ibanking_tuition_db",
         cursorclass=tuition_database.pymysql.cursors.DictCursor,
         charset="utf8mb4",
         autocommit=False,

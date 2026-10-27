@@ -1,226 +1,261 @@
 # iBanking Tuition Payment System
 
+A university Service-Oriented Architecture (SOA) demo for paying tuition from a simulated bank account. It uses three FastAPI services, three separate MySQL databases, and an email OTP confirmation step.
+
 ## Table of Contents
 
-- [Project Overview](#project-overview)
-- [Features](#features)
-- [System Architecture](#system-architecture)
-- [Technology Stack](#technology-stack)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Environment Setup](#environment-setup)
-- [Run with Docker](#run-with-docker)
-- [Demo Data](#demo-data)
-- [Demo Workflow](#demo-workflow)
-- [Testing](#testing)
-- [Stop and Restart](#stop-and-restart)
-- [Troubleshooting](#troubleshooting)
-- [Security Notes](#security-notes)
+1. [Project Overview](#1-project-overview)
+2. [System Architecture](#2-system-architecture)
+3. [Technology Stack](#3-technology-stack)
+4. [Prerequisites](#4-prerequisites)
+5. [Quick Start](#5-quick-start)
+6. [Interactive Setup Menu](#6-interactive-setup-menu)
+7. [Demo Accounts and Data](#7-demo-accounts-and-data)
+8. [Manual Testing -- Mailpit](#8-manual-testing----mailpit)
+9. [Testing OTP with Real Gmail](#9-testing-otp-with-real-gmail)
+10. [Additional Testing Scenarios](#10-additional-testing-scenarios)
+11. [Stop, Restart and Reset](#11-stop-restart-and-reset)
+12. [Project Structure](#12-project-structure)
+13. [Troubleshooting](#13-troubleshooting)
 
-## Project Overview
+## 1. Project Overview
 
-iBanking Tuition Payment System is a demo online banking application for paying university tuition. A user can sign in, check an account, find a tuition bill, confirm a payment by email OTP, and view payment history.
+Users can sign in, view their simulated bank account, find an unpaid tuition bill, and pay it after confirming an email OTP. Payment history and the current account balance are available in the web app.
 
-## Features
-
-- User login with JWT authentication.
-- Account information and balance lookup.
-- Tuition lookup by student ID.
-- OTP verification by email.
-- Tuition payment from an account.
-- Transaction history.
-- Protection against duplicate payments and duplicate account debits.
-
-## System Architecture
+## 2. System Architecture
 
 ```text
-Browser
-  |
-  v
-Nginx (frontend and API routing)
-  |---------------- User Service ---- account_db
-  |---------------- Tuition Service -- ibanking_tuition
-  |---------------- Payment Service -- payment_db
-                         |
-                         +---- Gmail SMTP
+Browser -> Nginx -> User & Account Service -> ibanking_account_db
+                 -> Tuition Service       -> ibanking_tuition_db
+                 -> Payment Service       -> ibanking_payment_db
+                                           -> Mailpit or configured SMTP
 ```
 
-- **Frontend and Nginx:** Nginx serves the static frontend and routes browser API requests to the correct backend service.
-- **User Service:** Handles login, JWTs, user information, accounts, and safe account debits.
-- **Tuition Service:** Looks up tuition bills and protects them from simultaneous payment claims.
-- **Payment Service:** Creates transactions, sends OTP email, confirms payments, and provides history.
-- **MySQL:** Stores separate data for User, Tuition, and Payment services.
+- **User & Account Service** authenticates users and provides profile and account data. It protects account debits against duplicate requests and concurrent balance changes.
+- **Tuition Service** looks up student bills and claims or confirms tuition payments.
+- **Payment Service** creates payment transactions, sends and verifies OTPs, and coordinates the other services.
+- **Nginx** serves the frontend and routes public API requests to the services.
+- **MySQL** stores separate user/account, tuition, and payment data.
+- **Mailpit** receives demo email locally. Gmail SMTP is an optional delivery configuration.
 
-## Technology Stack
+The repository also contains older submission diagrams in `diagram/`. The microservice diagram includes an external tuition system that is not part of the current Compose runtime, so the diagram is retained as project material but is not presented as the current runtime architecture.
 
-Versions below come from the Docker image tags and service requirements in this repository. Some image tags and Python package ranges are not pinned to a patch version.
+## 3. Technology Stack
 
-- Python 3.12 container base image.
-- FastAPI `>=0.115,<1.0` for User and Tuition; Payment pins FastAPI `0.141.1`.
-- MySQL `8.4`.
-- Nginx `alpine` image tag.
-- HTML, CSS, and browser JavaScript.
-- Pytest `>=8,<9` for automated tests.
+- Python 3.12, FastAPI, SQLAlchemy, and PyMySQL for the backend services.
+- MySQL 8.4 for persistent service databases.
+- Docker Compose for local setup and service networking.
+- Nginx for frontend hosting and API routing.
+- HTML, CSS, and JavaScript for the web frontend.
+- Pytest for unit, database, and concurrency tests.
+- Mailpit for local SMTP capture; Gmail SMTP is optional.
 
-## Project Structure
+## 4. Prerequisites
 
-```text
-backend/
-  user_service/
-  tuition_service/
-  payment_service/
-db/
-  docker-init/       # Fresh Docker database schemas
-  user/              # User schema, migrations, and demo seed
-  tuition/           # Tuition schema and demo seed
-  payment/           # Payment schema and migrations
-  demo_reset_*.sql   # Guarded local demo reset scripts
-docs/                # Demo data, E2E testing, and database review notes
-frontend/            # HTML, CSS, and JavaScript
-nginx/               # Nginx routing configuration
-tests/               # Unit, service, database, and opt-in E2E tests
-docker-compose.yml
-pytest.ini
-```
-
-## Prerequisites
-
-- Docker Desktop running with Linux containers enabled.
 - Git.
-- A Gmail account with 2-Step Verification and an App Password if you want OTP email sent through Gmail.
-- Git Bash on Windows for the commands below.
+- Docker Desktop with Docker Compose v2, installed and running before setup.
+- To use `./setup.sh` on Windows, use Git Bash. Linux and macOS need Docker Compose v2 and the standard shell utilities used by the script.
 
-## Environment Setup
+No host MySQL server, Python installation, database import, or email account is required for the default demo.
 
-Copy the example file and edit the local copy:
+## 5. Quick Start
+
+Clone the repository, start Docker Desktop, then run setup from the project directory.
 
 ```bash
-cp .env.docker.example .env.docker
+git clone https://github.com/WhyZynx/iBanking-Tuition-Payment.git
+cd iBanking-Tuition-Payment
+./setup.sh
 ```
 
-Set these values in `.env.docker`:
+On Windows, run:
 
-| Variable | Purpose |
+```bat
+setup.bat
+```
+
+Setup creates `.env.docker` with local random secrets if the file is missing. It does not overwrite an existing file or reset databases. It starts the services, waits for their health checks, verifies the frontend and Mailpit, checks demo login, then shows the interactive menu. Fresh installations use Mailpit and initialize all three databases automatically.
+
+Default addresses:
+
+- Frontend: <http://localhost:8080>
+- Mailpit inbox: <http://localhost:8025>
+
+If a web port is already in use, set `FRONTEND_PORT` or `MAILPIT_WEB_PORT` in the ignored `.env.docker` and run setup again. MySQL and backend ports are not published to the host.
+
+## 6. Interactive Setup Menu
+
+After successful setup, the menu provides:
+
+| Option | Action |
 | --- | --- |
-| `MYSQL_ROOT_PASSWORD` | Password for the local MySQL root account. Use letters and numbers so it is safe in the service connection URLs. |
-| `MYSQL_PORT` | Host port mapped to MySQL. The default is `3307`; change it if another program already uses that port. |
-| `JWT_SECRET_KEY` | Secret used to sign and verify access tokens. Use a new random value. |
-| `INTERNAL_API_KEY` | Shared key for private calls between backend services. Use a new random value. |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT lifetime in minutes. The default is `30`. |
-| `SMTP_HOST` | Gmail SMTP server, normally `smtp.gmail.com`. |
-| `SMTP_PORT` | Gmail SMTP port, normally `587` with STARTTLS. |
-| `SMTP_USERNAME` | Gmail address used to send messages. |
-| `SMTP_PASSWORD` | Gmail App Password. Do not use your regular Gmail password. |
-| `SMTP_FROM_EMAIL` | Sender address shown on OTP messages, usually the configured Gmail address. |
+| `1` | View current demo data from MySQL using read-only queries. |
+| `2` | Open the iBanking frontend in the default browser. |
+| `3` | Open the Mailpit inbox in the default browser. |
+| `4` | Choose Mailpit or configure Gmail SMTP for Payment Service. |
+| `0` | Exit the menu. Docker services continue running. |
 
-Generate random local secrets in Git Bash with `openssl rand -hex 32`, then paste the output into the matching fields. Do not share or commit those values.
+Invalid input returns to the menu. A database viewer error also returns to the menu after showing a troubleshooting hint.
 
-To use Gmail, enable 2-Step Verification in the Google Account and create an App Password if the account offers that option. See [Google's App Password guide](https://support.google.com/accounts/answer/185833). Some work or school accounts, security-key-only setups, or Advanced Protection accounts may not offer App Passwords. Put the App Password in `SMTP_PASSWORD`. The sender settings above control who sends the OTP. The recipient is the email address stored for the paying user in `account_db`; these are separate settings.
+Option 4 has this submenu:
 
-## Run with Docker
+| Option | Email mode |
+| --- | --- |
+| `1` | Mailpit local testing: `mailpit:1025`, no authentication or TLS. |
+| `2` | Gmail SMTP: `smtp.gmail.com:587`, authenticated with STARTTLS. |
+| `0` | Return to the main menu. |
 
-Run these commands from the repository root:
+Changing the mode updates only SMTP settings in `.env.docker` and recreates Payment Service. MySQL, other services, and stored data are left running. The Gmail App Password is entered without displaying it, stored locally in the Git-ignored `.env.docker`, and not printed by the menu. Gmail delivery is not tested automatically.
+
+## 7. Demo Accounts and Data
+
+The demo users are `user01` through `user08`. Their shared demo password is `password123`.
+
+The following are **initial seed values**, not guaranteed current values:
+
+| Username | Student ID | Initial balance (VND) | Initial tuition (VND) | Initial tuition status |
+| --- | --- | ---: | ---: | --- |
+| `user01` | `524H0001` | 25,000,000 | 18,500,000 | UNPAID |
+| `user02` | `524H0002` | 15,000,000 | 16,500,000 | UNPAID |
+| `user03` | `524H0003` | 4,000,000 | 19,000,000 | UNPAID |
+| `user04` | `524H0004` | 30,000,000 | 17,500,000 | UNPAID |
+| `user05` | `723H0001` | 12,000,000 | 14,000,000 | UNPAID |
+| `user06` | `723H0002` | 20,000,000 | 18,000,000 | PAID |
+| `user07` | `723H0003` | 8,000,000 | 12,500,000 | UNPAID |
+| `user08` | `723H0004` | 35,000,000 | 21,000,000 | UNPAID |
+
+Choose option 1 to view current database values before testing. For an initial successful-payment example, `user04` has enough seed balance for the `524H0004` bill. For an insufficient-balance example, `user03` does not have enough seed balance for the `524H0003` bill. A previous payment may have changed either balance or bill status, so always check the live viewer first. A fresh seed does not replace data in an existing MySQL volume.
+
+## 8. Manual Testing -- Mailpit
+
+1. Run `setup.bat` or `./setup.sh` and leave the email mode set to Mailpit.
+2. Choose option 1 and select an account with an unpaid bill and sufficient current balance.
+3. Choose option 2 and log in with that username and `password123`.
+4. Open Tuition, select the unpaid bill, and start the payment.
+5. Choose option 3 or open <http://localhost:8025>.
+6. Find the OTP email addressed to the selected user's registered email.
+7. Enter the OTP and confirm the payment.
+8. Check the account balance, tuition status, and payment history in the app or choose option 1 again.
+
+For a successful payment, the tuition status becomes `PAID`, the account is debited by the bill amount, and the transaction is recorded as successful. The OTP is generated and verified by the normal application flow; Mailpit does not bypass OTP checks.
+
+## 9. Testing OTP with Real Gmail
+
+This is a **manual local demo procedure**. The normal setup remains on Mailpit, and setup never sends real email. Do not use a shared or production database.
+
+1. Start the system and choose option 4, then option 2.
+2. Google requires 2-Step Verification to create an App Password. Open Google's [App Passwords page](https://myaccount.google.com/apppasswords), sign in, and create an App Password for this demo.
+3. Enter the Gmail sender address and App Password in the menu. The password input is hidden. The menu applies Gmail SMTP on port 587 with STARTTLS to Payment Service.
+4. Seeded emails such as `user04@example.com` are placeholders and cannot receive real mail. Changing SMTP mode does not change a user's registered email.
+5. The profile page only displays user details; it does not update email addresses. To receive a real OTP, manually change the email for **one selected demo user** in the local `ibanking_account_db` database as described below.
+6. Log in as that user, start a payment for an unpaid tuition bill, receive the OTP in the controlled inbox, enter it, and confirm the payment.
+7. Restore the original email using the guarded restore procedure below. Then choose option 4 and option 1 to return Payment Service to Mailpit.
+
+### LOCAL DEMO USE ONLY: Change one user's email
+
+Do not run this against production or shared data. The setup menu never changes user records. The procedure below changes only `users.email`; it does not update balances, passwords, tuition bills, or payment history.
+
+Open a MySQL client in the existing container. The `-p` option prompts for the local database password; do not put the password in the command:
 
 ```bash
-docker compose --env-file .env.docker -p ibanking-demo config --quiet
-docker compose --env-file .env.docker -p ibanking-demo up --build -d
-docker compose --env-file .env.docker -p ibanking-demo ps
+docker compose --env-file .env.docker -p ibanking-demo exec mysql mysql -uroot -p ibanking_account_db
 ```
 
-Open the frontend at <http://localhost:8080>. Nginx routes `/api/v1/tuition` to Tuition, `/api/v1/payments` and `/api/v1/transactions` to Payment, and other `/api/v1/` requests to User.
-
-The backend ports are private to the Docker network. There is no API docs URL exposed on the host. Each FastAPI service provides `/docs` inside Docker for internal debugging.
-
-Check service logs with:
-
-```bash
-docker compose --env-file .env.docker -p ibanking-demo logs --tail=100
-```
-
-If MySQL port `3307` is already allocated, edit `MYSQL_PORT` in `.env.docker` to a free host port, such as `3308`. The services still connect to MySQL at `mysql:3306` inside Docker.
-
-The Compose file has fixed container names (`ibanking-mysql`, `ibanking-user-service`, `ibanking-tuition-service`, and `ibanking-payment-service`). Only one project using these names can run at a time. If there is a name conflict, inspect `docker ps -a` and stop the other iBanking Compose project before starting this one. Do not remove its volume.
-
-## Demo Data
-
-Docker init scripts create the three schemas and tables on the first initialization of the MySQL volume. They do not add demo users or tuition bills. Seed data is optional. Run these commands once after MySQL is healthy:
-
-```bash
-docker compose --env-file .env.docker -p ibanking-demo exec -T mysql \
-  sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"' < db/user/demo_seed.sql
-docker compose --env-file .env.docker -p ibanking-demo exec -T mysql \
-  sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD"' < db/tuition/demo_seed.sql
-```
-
-The user names, password hash, demo email addresses, accounts, and initial balances are defined in `db/user/demo_seed.sql`. Tuition bills are in `db/tuition/demo_seed.sql`. The source seed and `docs/DEMO_DATA.md` identify the demo logins as `user01` through `user08`, all with password `password123`. Payment data does not need a seed.
-
-The seeded recipient addresses use `example.com`, so they cannot receive Gmail messages. To receive OTP at an address you control, update only the matching user in this **demo database**. First inspect the row:
-
-```bash
-docker compose --env-file .env.docker -p ibanking-demo exec mysql mysql -uroot -p
-```
-
-Enter the MySQL root password when prompted, then run:
+First inspect the selected user's current email and record it exactly for restoration:
 
 ```sql
-USE account_db;
-SELECT username, student_id, email FROM users WHERE username = 'user01';
-UPDATE users
-SET email = 'your-address@example.net'
-WHERE username = 'user01' AND student_id = '524H0001';
-SELECT username, student_id, email FROM users WHERE username = 'user01';
+SELECT username, email FROM users WHERE username = 'user04';
 ```
 
-Use your own inbox address. Confirm the selected row before updating it. Do not change an account in a shared or production database for this demo.
+Before running the update, explicitly confirm that `user04` is the account you chose, the selected row shows the original email you recorded, and the replacement address belongs to you. Replace both placeholders below with the values you inspected and confirmed. Keep the confirmation variable set to `NO` until you are ready to make this one local demo change, then type `YES`. The `WHERE` clause protects against changing the row if its email has changed since inspection.
 
-## Demo Workflow
+```sql
+START TRANSACTION;
+SET @confirm_email_change = 'NO'; -- change to YES only after explicit confirmation
+UPDATE users
+SET email = 'YOUR_CONTROLLED_EMAIL'
+WHERE username = 'user04' AND email = 'ORIGINAL_EMAIL_FROM_SELECT'
+  AND @confirm_email_change = 'YES';
+SELECT ROW_COUNT() AS updated_rows;
+SELECT username, email FROM users WHERE username = 'user04';
+```
 
-1. Open the frontend and log in as a seeded demo user.
-2. Open **Accounts** to view the account and balance.
-3. Open **Tuition** and search by student ID.
-4. Request an OTP and check the paying user's email inbox.
-5. Enter the OTP and confirm the payment.
-6. Open **History** to see the completed transaction.
+Commit only if `updated_rows` is exactly `1` and the SELECT shows the intended address. Otherwise run `ROLLBACK;` and inspect the row again.
 
-## Testing
+After testing, explicitly restore the original address you recorded. Replace the placeholders with the exact original and test addresses. As above, execute the guarded update only after confirming the selected account and values:
 
-From the repository root, run the automated tests with:
+```sql
+START TRANSACTION;
+SET @confirm_email_restore = 'NO'; -- change to YES only after explicit confirmation
+UPDATE users
+SET email = 'ORIGINAL_EMAIL_FROM_SELECT'
+WHERE username = 'user04' AND email = 'YOUR_CONTROLLED_EMAIL'
+  AND @confirm_email_restore = 'YES';
+SELECT ROW_COUNT() AS restored_rows;
+SELECT username, email FROM users WHERE username = 'user04';
+```
+
+Commit only when `restored_rows` is exactly `1` and the SELECT confirms the original email. Otherwise run `ROLLBACK;`. Exit the client with `exit;`. Do not run either update unless you have confirmed the intended user and email values.
+
+## 10. Additional Testing Scenarios
+
+- **Successful payment:** manual with an unpaid bill and sufficient current balance; confirm the OTP in Mailpit or, after the manual setup above, the user's real inbox.
+- **Insufficient balance:** manual with an unpaid bill whose amount exceeds the selected account's current balance. The payment is rejected and no successful debit is expected.
+- **Invalid, expired, or already-used OTP:** invalid and expired/used OTP behavior is covered by automated Payment Service tests. An OTP expires after five minutes; an expired OTP can also be checked manually by waiting before confirmation.
+- **Duplicate payment:** manual retry after a bill is paid should be rejected. Automated tests cover repeated requests and confirmation behavior.
+- **Two accounts paying separate bills:** can be exercised manually if both accounts currently have unpaid bills and enough balance.
+- **Concurrent debits and payment confirmations:** use the automated concurrency tests with an isolated test database. Do not simulate concurrent requests against data you need to preserve.
+
+Run the project test suite from an isolated Python environment with service dependencies installed:
 
 ```bash
 python -m pytest tests -q
 ```
 
-Latest recorded result: **107 passed, 14 skipped**. The skipped tests are conditional: two require a separate MySQL database named `account_db_test`; real HTTP E2E tests require explicitly configured disposable databases and approval; OTP scenarios also need a local test email reader. One fault-injection E2E scenario remains skipped because the repository has no controlled fault-injection proxy. See `docs/E2E_TESTING.md` before setting up those tests.
+MySQL concurrency tests require an isolated `ibanking_account_db_test` database. HTTP E2E tests are opt-in and must use explicitly configured disposable databases, never the demo databases.
 
-`pytest.ini` adds the repository root to Python's import path. Keep it when running the tests from the repository root.
+## 11. Stop, Restart and Reset
 
-## Stop and Restart
+- Run `stop.bat` on Windows or `./stop.sh` on Linux/macOS to stop this Compose project. The database volume, records, and `.env.docker` remain.
+- Run `setup.bat` or `./setup.sh` to start or restart services. Setup preserves the existing database volume.
+- Choosing option 0 exits only the menu; containers continue running.
 
-Stop the services without removing containers or database data:
-
-```bash
-docker compose --env-file .env.docker -p ibanking-demo stop
-```
-
-Start the same project again:
+Resetting demo data is a separate destructive action. Back up any data you need, stop the project, and remove only its MySQL volume. For the default Compose project:
 
 ```bash
-docker compose --env-file .env.docker -p ibanking-demo up -d
+docker compose --env-file .env.docker -p ibanking-demo down
+docker volume ls
+docker volume rm ibanking-demo_mysql_data
 ```
 
-MySQL data is stored in the named volume `ibanking-demo_mysql_data`. `docker compose down` without `-v` also keeps the named volume. **Do not use `docker compose down -v` when you need to keep the database.**
+Confirm the volume name belongs to `ibanking-demo` before removing it. Then run setup again. Removing this volume permanently deletes all three databases, including demo transactions and payment history. Never use global Docker prune commands or `docker compose down -v` for this procedure.
 
-## Troubleshooting
+## 12. Project Structure
 
-- **Docker Engine unavailable:** Start Docker Desktop, wait until it reports that the engine is running, then check `docker info`.
-- **MySQL port already allocated:** Change `MYSQL_PORT` in `.env.docker` to another free host port and run Compose again.
-- **Container name conflict:** The Compose file uses fixed `ibanking-*` names. Stop the other iBanking project that owns the names; do not delete its volume.
-- **Gmail SMTP error:** Check the sender address, port `587`, Gmail App Password, and 2-Step Verification. Check that `SMTP_FROM_EMAIL` matches the sending account.
-- **OTP does not arrive:** Check the email stored for the paying user in `account_db`; it is the recipient and can differ from the SMTP sender.
-- **Database volume already initialized:** MySQL init SQL runs only when its data directory is empty. Editing an init script does not update an existing database. Keep the volume; review the applicable forward-only migration and back up the intended database before applying it.
+```text
+backend/                 FastAPI service code
+db/docker-init/          Fresh-install schemas and demo seeds
+db/{user,tuition,payment}/ SQL schemas, seeds, and forward migrations
+diagram/                 Existing SOA submission diagrams
+docs/                    Existing-database migration guide
+frontend/                Static web app
+nginx/                   Nginx routing configuration
+tests/                   Unit, database, concurrency, and opt-in HTTP tests
+docker-compose.yml
+setup.bat, setup.sh      Setup, health checks, and interactive menu
+setup-menu.ps1           Windows menu and SMTP configuration
+stop.bat, stop.sh        Stop services without removing data
+```
 
-## Security Notes
+## 13. Troubleshooting
 
-- Never commit `.env.docker`, any `.env` file, Gmail App Passwords, `JWT_SECRET_KEY`, or `INTERNAL_API_KEY`.
-- Keep real credentials out of README files, logs, screenshots, and chat.
-- Use fictional demo data and a local demo database. Do not run demo seeds or reset scripts against a shared or production database.
+- **Docker Desktop is not running:** Start Docker Desktop and retry setup.
+- **A container is unhealthy:** Run `docker compose --env-file .env.docker -p ibanking-demo logs --tail=80`.
+- **Frontend is unavailable:** Check Nginx with `docker compose --env-file .env.docker -p ibanking-demo ps` and confirm `FRONTEND_PORT` is free.
+- **MySQL connection or viewer error:** Check MySQL health and logs with the commands above. The viewer needs initialized `users`, `accounts`, and `tuition_bills` tables.
+- **Demo data is missing:** Existing MySQL volumes are not reseeded. Inspect the current database before considering a reset.
+- **Mailpit OTP is missing:** Confirm the mode is Mailpit (option 4, then 1), the payment service is healthy, and the selected user's email is present. Open Mailpit at <http://localhost:8025>.
+- **Google App Password is unavailable:** Confirm 2-Step Verification is enabled. Some account policies may not offer App Passwords; use Mailpit for the local demo if so.
+- **Gmail SMTP authentication fails:** Check the sender address, App Password, port `587`, and STARTTLS. Use an App Password, not the regular Google account password. Delivery is not tested by setup.
+- **Gmail message goes nowhere:** Check the paying user's registered email. Seeded `example.com` addresses are placeholders and are not changed by the SMTP menu.
+- **Payment Service is not healthy after changing email mode:** The menu restores the previous `.env.docker` SMTP settings if applying the new settings fails. Inspect service logs; MySQL is not restarted by the menu.

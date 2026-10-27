@@ -48,6 +48,8 @@ logs/
 
 # Private keys and local credentials
 *.pem
+*.crt
+*.cer
 *.key
 *.p12
 *.pfx

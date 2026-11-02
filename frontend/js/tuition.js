@@ -183,7 +183,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	async function lookupTuition(studentId) {
 		clearTuitionSelection();
-		lookupMessage.textContent = 'Looking up tuition information...';
 		tuitionServiceMessage.classList.add('hidden');
 		const isManualSearch = getPaymentTarget() === 'other';
 		if (isManualSearch) {

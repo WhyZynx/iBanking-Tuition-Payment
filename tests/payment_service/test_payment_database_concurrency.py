@@ -63,6 +63,30 @@ def test_transaction_processing_claim_is_atomic(tmp_path):
     engine.dispose()
 
 
+def test_stale_processing_transaction_requires_reconciliation(tmp_path):
+    engine, session_factory = create_database(tmp_path)
+    stale_started_at = datetime.now() - timedelta(minutes=5)
+    with session_factory() as session:
+        session.execute(
+            text("UPDATE transactions SET status='PROCESSING', completed_at=:started_at WHERE transaction_id='race-tx'"),
+            {"started_at": stale_started_at},
+        )
+        session.commit()
+        updated = TransactionModel.mark_stale_processing_for_reconciliation(
+            session,
+            transaction_id="race-tx",
+        )
+        assert updated == 1
+
+    with session_factory() as session:
+        transaction = session.execute(
+            text("SELECT status, completed_at FROM transactions WHERE transaction_id='race-tx'")
+        ).one()
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert transaction.completed_at is None
+    engine.dispose()
+
+
 def test_otp_consume_is_atomic_and_one_time(tmp_path):
     engine, session_factory = create_database(tmp_path)
     barrier = Barrier(2)

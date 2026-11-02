@@ -202,6 +202,11 @@ def payment_client(monkeypatch):
     monkeypatch.setattr(paymentService.requests, "delete", delete)
     monkeypatch.setattr(paymentService, "send_payment_success_email", lambda **_kwargs: None)
     monkeypatch.setattr(transactionModel.TransactionModel, "find_by_id", find_transaction)
+    monkeypatch.setattr(
+        transactionModel.TransactionModel,
+        "mark_stale_processing_for_reconciliation",
+        lambda _db, **_kwargs: 0,
+    )
     monkeypatch.setattr(transactionModel.TransactionModel, "complete", complete_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "update_status", update_transaction_status)
     monkeypatch.setattr(
@@ -250,7 +255,7 @@ def test_successful_payment_revalidates_and_finalizes_transaction(payment_client
     assert body["student_id"] == STUDENT_ID
     assert body["student_name"] == "Nguyen Van B"
     assert Decimal(str(body["amount"])) == Decimal("5000000.25")
-    assert body["completed_at"]
+    assert body["completed_at"].endswith("Z")
     assert transaction.status == "SUCCESS"
     assert transaction.amount == Decimal("5000000.25")
     assert transaction.completed_at is not None

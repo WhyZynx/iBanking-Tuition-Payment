@@ -15,7 +15,10 @@ from backend.payment_service.config import (
     USER_SERVICE_URL,
 )
 from backend.payment_service.models.otpModel import OtpModel
-from backend.payment_service.models.transactionModel import TransactionModel
+from backend.payment_service.models.transactionModel import (
+    TransactionModel,
+    serialize_utc_datetime,
+)
 from backend.payment_service.services.email_service import (
     send_otp_email,
     send_payment_success_email,
@@ -578,7 +581,7 @@ class PaymentService:
                 transaction.student_name,
             ),
             "amount": amount,
-            "completed_at": saved_completed_at.isoformat(),
+            "completed_at": serialize_utc_datetime(saved_completed_at),
         }
 
     @staticmethod

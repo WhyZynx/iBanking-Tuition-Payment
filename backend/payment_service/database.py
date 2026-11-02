@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from backend.payment_service.config import PAYMENT_DATABASE_URL
@@ -8,6 +8,11 @@ from backend.payment_service.config import PAYMENT_DATABASE_URL
 
 # Táº¡o Ä‘á»™ng cÆ¡ káº¿t ná»‘i
 engine = create_engine(PAYMENT_DATABASE_URL)
+if engine.dialect.name == "mysql":
+    @event.listens_for(engine, "connect")
+    def set_mysql_session_timezone(dbapi_connection, _connection_record):
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("SET time_zone = '+00:00'")
 
 # Táº¡o xÆ°á»Ÿng sáº£n xuáº¥t phiĂªn lĂ m viá»‡c (Session)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

@@ -351,7 +351,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 		try {
 			let result = await getPendingPaymentStatus();
-			for (let attempt = 0; result.status === 'PROCESSING' && attempt < 30; attempt += 1) {
+			for (let attempt = 0; result.status === 'PROCESSING' && attempt < 120; attempt += 1) {
 				otpDeliveryMessage.textContent = 'Payment is processing. Checking for the result...';
 				await new Promise(resolve => setTimeout(resolve, 1000));
 				result = await getPendingPaymentStatus();

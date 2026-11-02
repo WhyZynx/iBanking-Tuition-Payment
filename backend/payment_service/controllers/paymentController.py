@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session
 
 from backend.payment_service.config import JWT_ALGORITHM, JWT_SECRET_KEY
 from backend.payment_service.database import get_db
-from backend.payment_service.models.transactionModel import TransactionModel
+from backend.payment_service.models.transactionModel import (
+    TransactionModel,
+    serialize_utc_datetime,
+)
 from backend.payment_service.services.paymentService import PaymentService
 
 
@@ -79,6 +82,10 @@ def create_payment(
     db_session: Session = Depends(get_db),
 ):
     TransactionModel.fail_expired_pending(db_session)
+    TransactionModel.mark_stale_processing_for_reconciliation(
+        db_session,
+        payer_user_id=current_user_id,
+    )
 
     return payment_service.create_payment(
         db_session=db_session,
@@ -95,6 +102,14 @@ def get_payment_status(
     db_session: Session = Depends(get_db),
 ):
     transaction = get_user_transaction(db_session, transaction_id, current_user_id)
+    if transaction.status == "PROCESSING":
+        was_marked_stale = TransactionModel.mark_stale_processing_for_reconciliation(
+            db_session,
+            transaction_id=transaction_id,
+            payer_user_id=current_user_id,
+        )
+        if was_marked_stale:
+            transaction = TransactionModel.find_by_id(db_session, transaction_id)
     if transaction.status == "PENDING" and payment_service.fail_pending_if_tuition_paid(
         db_session, transaction.transaction_id, transaction.student_id
     ):
@@ -107,8 +122,8 @@ def get_payment_status(
         "amount": transaction.amount,
         "status": transaction.status,
         "completed_at": (
-            transaction.completed_at.isoformat()
-            if transaction.completed_at
+            serialize_utc_datetime(transaction.completed_at)
+            if transaction.completed_at and transaction.status in ("SUCCESS", "FAILED")
             else None
         ),
     }
@@ -184,7 +199,7 @@ def get_transaction_history(
             transaction = TransactionModel.find_by_id(db_session, item["transactionId"])
             item["status"] = transaction.status
             item["completedAt"] = (
-                transaction.completed_at.isoformat()
+                serialize_utc_datetime(transaction.completed_at)
                 if transaction.completed_at
                 else None
             )

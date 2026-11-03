@@ -46,6 +46,9 @@ services:
     environment:
       DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition_db"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      TUITION_CLAIM_TTL_SECONDS: ${TUITION_CLAIM_TTL_SECONDS:-300}
     depends_on:
       mysql:
         condition: service_healthy

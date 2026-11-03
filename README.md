@@ -205,6 +205,7 @@ Commit only when `restored_rows` is exactly `1` and the SELECT confirms the orig
 - **Duplicate payment:** manual retry after a bill is paid should be rejected. Automated tests cover repeated requests and confirmation behavior.
 - **Two accounts paying separate bills:** can be exercised manually if both accounts currently have unpaid bills and enough balance.
 - **Concurrent debits and payment confirmations:** use the automated concurrency tests with an isolated test database. Do not simulate concurrent requests against data you need to preserve.
+- **Two demo users competing for one bill:** for a one-time local demonstration, start the demo stack and run `IBANKING_DEMO_CONCURRENCY_APPROVAL=YES python -m pytest -s -q tests/e2e/test_demo_two_payer_concurrency.py`. By default this uses `user01`, `user04`, and student `524H0004`. It checks that the bill is unpaid and both accounts have enough funds before creating payments, then confirms them concurrently. It uses the local database to retrieve the OTPs and leaves the winning bill `PAID`; use only on disposable local demo data. For a different pair or bill, set `IBANKING_DEMO_FIRST_USERNAME`, `IBANKING_DEMO_SECOND_USERNAME`, and/or `IBANKING_DEMO_STUDENT_ID`.
 
 Run the project test suite from an isolated Python environment with service dependencies installed:
 
@@ -212,7 +213,7 @@ Run the project test suite from an isolated Python environment with service depe
 python -m pytest tests -q
 ```
 
-MySQL concurrency tests require an isolated `ibanking_account_db_test` database. HTTP E2E tests are opt-in and must use explicitly configured disposable databases, never the demo databases.
+MySQL concurrency tests require an isolated `ibanking_account_db_test` database. The regular HTTP E2E suite is opt-in and must use explicitly configured disposable databases. The one-shot demo concurrency test above is a separate, explicitly approved local demonstration that changes the demo bill and account data.
 
 ## 11. Stop, Restart and Reset
 

@@ -292,6 +292,7 @@ def test_concurrent_payment_status_allows_only_one_success(monkeypatch):
         cursor = MagicMock()
 
         def execute(query, params=None):
+            _ = params
             if "UPDATE tuition_bills" in query:
                 with lock:
                     if state["paid"]:
@@ -577,6 +578,15 @@ def test_get_claim_status(client, row, expected_state, expected_active):
 
 def test_release_claim_with_wrong_internal_api_key_is_rejected(client):
     response = client.delete(
+        "/api/v1/tuition/524H0104/claim/TX-WRONG-KEY",
+        headers={"X-Internal-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_get_claim_status_with_wrong_internal_api_key_is_rejected(client):
+    response = client.get(
         "/api/v1/tuition/524H0104/claim/TX-WRONG-KEY",
         headers={"X-Internal-API-Key": "wrong-key"},
     )

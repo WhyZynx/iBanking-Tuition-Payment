@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 	let selectedTuition = null;
 	let currentUser = null;
 	let pendingPayment = readPendingPayment();
+	const resendCooldownSeconds = 60;
+	let resendCooldownUntil = 0;
+	let resendCooldownTimer = null;
 
 	searchForm.addEventListener('submit', searchTuition);
 	document.querySelectorAll('input[name="payment-target"]').forEach(choice => {
@@ -299,10 +302,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 		try {
 			await window.IBanking.paymentRequest(`/api/v1/payments/${encodeURIComponent(pendingPayment.transactionId)}/otp`, { method: 'POST' });
 			otpDeliveryMessage.textContent = 'OTP has been sent to your email.';
+			startResendCooldown(resendCooldownSeconds);
 		} catch (error) {
 			otpError.textContent = error.message;
-		} finally {
-			resendOtpButton.disabled = false;
+			updateResendCooldown();
 		}
 	}
 
@@ -362,8 +365,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 			} else if (result.status === 'PENDING') {
 				otpInput.disabled = false;
 				confirmOtpButton.disabled = false;
-				resendOtpButton.disabled = false;
 				showOtpStep('Your payment is still pending. Enter the emailed OTP or request a new one.');
+				updateResendCooldown();
 			} else if (result.status === 'PROCESSING') {
 				otpDeliveryMessage.textContent = 'Payment is still processing. Keep this page open or refresh to check again.';
 			} else if (result.status === 'RECONCILIATION_REQUIRED') {
@@ -395,7 +398,74 @@ document.addEventListener('DOMContentLoaded', async () => {
 	function clearPendingPayment() {
 		sessionStorage.removeItem(window.IBanking.PENDING_TRANSACTION_KEY);
 		sessionStorage.removeItem(window.IBanking.PENDING_CONTEXT_KEY);
+		clearResendCooldown();
 		pendingPayment = null;
+	}
+
+	function getResendCooldownKey() {
+		return pendingPayment
+			? `ibanking-otp-resend:${pendingPayment.transactionId}`
+			: null;
+	}
+
+	function startResendCooldown(seconds) {
+		resendCooldownUntil = Date.now() + seconds * 1000;
+		const key = getResendCooldownKey();
+		if (key) sessionStorage.setItem(key, String(resendCooldownUntil));
+		updateResendCooldown();
+	}
+
+	function updateResendCooldown() {
+		const key = getResendCooldownKey();
+		if (key && resendCooldownUntil === 0) {
+			const storedUntil = Number(sessionStorage.getItem(key) || 0);
+			resendCooldownUntil = Number.isFinite(storedUntil) ? storedUntil : 0;
+		}
+
+		if (resendCooldownTimer) {
+			window.clearInterval(resendCooldownTimer);
+			resendCooldownTimer = null;
+		}
+
+		const update = () => {
+			const remainingSeconds = Math.max(
+				0,
+				Math.ceil((resendCooldownUntil - Date.now()) / 1000)
+			);
+			if (remainingSeconds > 0) {
+				resendOtpButton.disabled = true;
+				resendOtpButton.textContent = `Resend OTP (${remainingSeconds}s)`;
+				return;
+			}
+
+			resendOtpButton.disabled = false;
+			resendOtpButton.textContent = 'Resend OTP';
+			if (key) sessionStorage.removeItem(key);
+			resendCooldownUntil = 0;
+			if (resendCooldownTimer) {
+				window.clearInterval(resendCooldownTimer);
+				resendCooldownTimer = null;
+			}
+		};
+
+		update();
+		if (resendCooldownUntil > Date.now()) {
+			resendCooldownTimer = window.setInterval(update, 1000);
+		}
+	}
+
+	function clearResendCooldown() {
+		const key = pendingPayment
+			? `ibanking-otp-resend:${pendingPayment.transactionId}`
+			: null;
+		if (key) sessionStorage.removeItem(key);
+		resendCooldownUntil = 0;
+		if (resendCooldownTimer) {
+			window.clearInterval(resendCooldownTimer);
+			resendCooldownTimer = null;
+		}
+		resendOtpButton.disabled = false;
+		resendOtpButton.textContent = 'Resend OTP';
 	}
 
 	function renderSuccess(result) {

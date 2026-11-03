@@ -63,13 +63,6 @@ def setup_demo_database():
             f"WHERE student_id='{student_id}';",
         )
         tuition_amounts.append(Decimal(amount))
-
-    initial_balance = max(tuition_amounts)
-    mysql_query(
-        "ibanking_account_db",
-        f"UPDATE accounts SET balance={initial_balance} "
-        f"WHERE account_number='{ACCOUNT_NUMBER}';",
-    )
     mysql_query(
         "ibanking_payment_db",
         "DELETE o FROM otps o JOIN transactions t "

@@ -18,6 +18,7 @@ from sqlalchemy.orm import sessionmaker
 from backend.user_service import database as user_database
 from backend.user_service.database import Base
 from backend.user_service import main as user_main
+from backend.user_service.controllers import account_controller
 from backend.user_service.models import Account, AccountDebit, User
 from backend.user_service.security import hash_password
 
@@ -155,6 +156,97 @@ def test_internal_lookup_and_debit(client: TestClient):
     assert debit.json() == {"success": True, "accountNumber": "1012345678", "remainingBalance": 6500000}
 
 
+def test_internal_debit_status_is_read_only_and_does_not_call_debit(client, monkeypatch):
+    headers = {"X-Internal-API-Key": "test-internal-key"}
+    db = user_database.SessionLocal()
+    db.add(
+        AccountDebit(
+            transaction_id="STATUS-FOUND-001",
+            account_number="1012345678",
+            amount=Decimal("100.00"),
+            balance_after=Decimal("14999900.00"),
+        )
+    )
+    db.commit()
+    db.close()
+
+    def unexpected_debit(*_args, **_kwargs):
+        raise AssertionError("GET debit status must not invoke debit logic")
+
+    monkeypatch.setattr(account_controller, "debit_account", unexpected_debit)
+    before = user_database.SessionLocal()
+    initial_account = before.get(Account, "1012345678")
+    assert initial_account is not None
+    initial_balance = initial_account.balance
+    initial_debit_count = before.query(AccountDebit).count()
+    before.close()
+
+    found = client.get(
+        "/api/v1/internal/debits/STATUS-FOUND-001",
+        headers=headers,
+    )
+    missing = client.get(
+        "/api/v1/internal/debits/STATUS-MISSING-001",
+        headers=headers,
+    )
+
+    assert found.status_code == 200
+    assert found.json() == {
+        "transaction_id": "STATUS-FOUND-001",
+        "status": "DEBITED",
+    }
+    assert missing.status_code == 200
+    assert missing.json() == {
+        "transaction_id": "STATUS-MISSING-001",
+        "status": "NOT_FOUND",
+    }
+
+    after = user_database.SessionLocal()
+    final_account = after.get(Account, "1012345678")
+    assert final_account is not None
+    assert final_account.balance == initial_balance
+    assert after.query(AccountDebit).count() == initial_debit_count
+    after.close()
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"X-Internal-API-Key": "wrong-key"}],
+)
+def test_internal_debit_status_requires_internal_api_key(client, headers):
+    response = client.get(
+        "/api/v1/internal/debits/STATUS-AUTH-001",
+        headers=headers,
+    )
+
+    assert response.status_code == 401
+
+
+def test_internal_debit_status_database_error_is_not_reported_as_not_found(
+    client, monkeypatch
+):
+    from sqlalchemy.exc import OperationalError
+    from sqlalchemy.orm import Session
+
+    def fail_status_query(self, statement, *args, **kwargs):
+        raise OperationalError(
+            statement,
+            {},
+            Exception(2006, "simulated database unavailable"),
+        )
+
+    monkeypatch.setattr(Session, "scalar", fail_status_query)
+    with TestClient(user_main.app, raise_server_exceptions=False) as isolated_client:
+        response = isolated_client.get(
+            "/api/v1/internal/debits/STATUS-DB-ERROR-001",
+            headers={"X-Internal-API-Key": "test-internal-key"},
+        )
+
+    assert response.status_code == 500
+    assert "NOT_FOUND" not in response.text
+    assert "simulated database unavailable" not in response.text
+
+
 def test_internal_key_rejects_missing_and_invalid_values(client: TestClient):
     for headers in ({}, {"X-Internal-API-Key": "wrong-key"}):
         response = client.get("/api/v1/internal/accounts/1012345678", headers=headers)
@@ -209,6 +301,12 @@ def test_duplicate_transaction_with_different_debit_is_rejected(client, account_
 
     assert first.status_code == 200
     assert conflicting.status_code == 409
+    assert conflicting.json() == {
+        "detail": {
+            "code": "TRANSACTION_ID_CONFLICT",
+            "message": "Transaction ID was already used for a different debit.",
+        }
+    }
 
     db = user_database.SessionLocal()
     first_account = db.get(Account, "1012345678")
@@ -261,11 +359,12 @@ def test_mysql_lock_errors_return_service_unavailable_and_rollback(
     client, monkeypatch, stage, error_code
 ):
     from sqlalchemy.exc import OperationalError
+    from sqlalchemy.engine import Connection
     from sqlalchemy.orm import Session
     from sqlalchemy.sql.dml import Update
 
     original_flush = Session.flush
-    original_execute = Session.execute
+    original_execute = Connection.execute
     original_rollback = Session.rollback
     rollback_calls = []
 
@@ -287,9 +386,8 @@ def test_mysql_lock_errors_return_service_unavailable_and_rollback(
         if (
             stage == "update"
             and isinstance(statement, Update)
-            and statement.table.name == "accounts"
         ):
-            raise lock_error(statement)
+            raise lock_error(str(statement))
         return original_execute(self, statement, *args, **kwargs)
 
     def track_rollback(self):
@@ -297,7 +395,7 @@ def test_mysql_lock_errors_return_service_unavailable_and_rollback(
         return original_rollback(self)
 
     monkeypatch.setattr(Session, "flush", fail_debit_flush)
-    monkeypatch.setattr(Session, "execute", fail_account_update)
+    monkeypatch.setattr(Connection, "execute", fail_account_update)
     monkeypatch.setattr(Session, "rollback", track_rollback)
 
     with TestClient(user_main.app, raise_server_exceptions=False) as isolated_client:
@@ -311,10 +409,7 @@ def test_mysql_lock_errors_return_service_unavailable_and_rollback(
     assert response.json() == {
         "detail": {
             "code": "DEBIT_ROLLED_BACK",
-            "message": (
-                "Database is temporarily unavailable; debit was rolled back. "
-                "Retry with the same transaction ID"
-            ),
+            "message": "Debit was rolled back successfully.",
         }
     }
     assert rollback_calls
@@ -330,17 +425,18 @@ def test_mysql_lock_errors_return_service_unavailable_and_rollback(
 
 def test_rollback_failure_returns_unknown_debit_outcome(client, monkeypatch):
     from sqlalchemy.exc import OperationalError
+    from sqlalchemy.engine import Connection
     from sqlalchemy.orm import Session
     from sqlalchemy.sql.dml import Update
 
-    original_execute = Session.execute
+    original_execute = Connection.execute
     original_rollback = Session.rollback
     rollback_attempts = []
 
     def fail_account_update(self, statement, *args, **kwargs):
-        if isinstance(statement, Update) and statement.table.name == "accounts":
+        if isinstance(statement, Update):
             raise OperationalError(
-                statement,
+                str(statement),
                 {},
                 Exception(1213, "simulated database lock error"),
             )
@@ -356,7 +452,7 @@ def test_rollback_failure_returns_unknown_debit_outcome(client, monkeypatch):
             )
         return original_rollback(self)
 
-    monkeypatch.setattr(Session, "execute", fail_account_update)
+    monkeypatch.setattr(Connection, "execute", fail_account_update)
     monkeypatch.setattr(Session, "rollback", fail_first_rollback)
 
     response = client.post(
@@ -369,10 +465,7 @@ def test_rollback_failure_returns_unknown_debit_outcome(client, monkeypatch):
     assert response.json() == {
         "detail": {
             "code": "DEBIT_OUTCOME_UNKNOWN",
-            "message": (
-                "Debit outcome could not be confirmed; reconcile before retrying with the "
-                "same transaction ID"
-            ),
+            "message": "Debit outcome could not be confirmed.",
         }
     }
     assert rollback_attempts
@@ -384,6 +477,50 @@ def test_rollback_failure_returns_unknown_debit_outcome(client, monkeypatch):
     assert account.balance == Decimal("15000000")
     assert db.get(AccountDebit, "ROLLBACK-UNKNOWN-001") is None
     db.close()
+
+
+def test_integrity_error_rollback_failure_stays_unknown_after_session_cleanup(
+    client, monkeypatch
+):
+    from sqlalchemy.exc import IntegrityError, OperationalError
+    from sqlalchemy.orm import Session
+
+    original_flush = Session.flush
+    original_rollback = Session.rollback
+    rollback_calls = []
+
+    def fail_debit_flush(self, objects=None):
+        if any(isinstance(instance, AccountDebit) for instance in self.new):
+            raise IntegrityError(
+                "INSERT INTO account_debits",
+                {},
+                Exception(1062, "simulated duplicate record"),
+            )
+        return original_flush(self, objects)
+
+    def fail_first_rollback(self):
+        rollback_calls.append(True)
+        if len(rollback_calls) == 1:
+            raise OperationalError(
+                "ROLLBACK",
+                {},
+                Exception(1213, "simulated rollback acknowledgement loss"),
+            )
+        return original_rollback(self)
+
+    monkeypatch.setattr(Session, "flush", fail_debit_flush)
+    monkeypatch.setattr(Session, "rollback", fail_first_rollback)
+
+    response = client.post(
+        "/api/v1/internal/accounts/1012345678/debit",
+        headers={"X-Internal-API-Key": "test-internal-key"},
+        json={"amount": "5000000.00", "transactionId": "INTEGRITY-ROLLBACK-UNKNOWN"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "DEBIT_OUTCOME_UNKNOWN"
+    assert len(rollback_calls) >= 2
+    assert "simulated" not in response.text
 
 
 def test_refresh_failure_after_commit_returns_committed_debit(client, monkeypatch):
@@ -448,10 +585,7 @@ def test_commit_error_returns_unknown_and_retry_is_idempotent(client, monkeypatc
     assert uncertain.json() == {
         "detail": {
             "code": "DEBIT_OUTCOME_UNKNOWN",
-            "message": (
-                "Debit outcome could not be confirmed; reconcile before retrying with the "
-                "same transaction ID"
-            ),
+            "message": "Debit outcome could not be confirmed.",
         }
     }
 
@@ -475,9 +609,44 @@ def test_commit_error_returns_unknown_and_retry_is_idempotent(client, monkeypatc
 
 def test_debit_rejects_invalid_cases(client: TestClient):
     headers = {"X-Internal-API-Key": "test-internal-key"}
-    assert client.post("/api/v1/internal/accounts/missing/debit", headers=headers, json={"amount": 1, "transactionId": "TX"}).status_code == 404
-    assert client.post("/api/v1/internal/accounts/1000000000/debit", headers=headers, json={"amount": 1, "transactionId": "TX"}).status_code == 409
-    assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": 999999999, "transactionId": "TX"}).status_code == 409
+    account_missing = client.post(
+        "/api/v1/internal/accounts/missing/debit",
+        headers=headers,
+        json={"amount": 1, "transactionId": "TX"},
+    )
+    inactive_account = client.post(
+        "/api/v1/internal/accounts/1000000000/debit",
+        headers=headers,
+        json={"amount": 1, "transactionId": "TX"},
+    )
+    insufficient_balance = client.post(
+        "/api/v1/internal/accounts/1012345678/debit",
+        headers=headers,
+        json={"amount": 999999999, "transactionId": "TX"},
+    )
+
+    assert account_missing.status_code == 404
+    assert account_missing.json() == {
+        "detail": {
+            "code": "ACCOUNT_NOT_FOUND",
+            "message": "Account not found.",
+        }
+    }
+    assert inactive_account.status_code == 409
+    assert inactive_account.json()["detail"]["code"] == "ACCOUNT_INACTIVE"
+    assert insufficient_balance.status_code == 409
+    assert insufficient_balance.json() == {
+        "detail": {
+            "code": "INSUFFICIENT_BALANCE",
+            "message": "Insufficient available balance.",
+        }
+    }
+    db = user_database.SessionLocal()
+    account = db.get(Account, "1012345678")
+    assert account is not None
+    assert account.balance == Decimal("15000000")
+    assert db.get(AccountDebit, "TX") is None
+    db.close()
     assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": 0, "transactionId": "TX"}).status_code == 422
     assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": -1, "transactionId": "TX-NEG"}).status_code == 422
     assert client.post("/api/v1/internal/accounts/1012345678/debit", headers=headers, json={"amount": "1.001", "transactionId": "TX-SCALE"}).status_code == 422

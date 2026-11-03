@@ -1,9 +1,9 @@
 import logging
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm.attributes import set_committed_value
 from sqlalchemy.orm import Session
@@ -13,19 +13,29 @@ from backend.user_service.schemas.account_schema import DebitRequest
 
 
 MYSQL_LOCK_ERROR_CODES = {1205, 1213}
+ACCOUNT_NOT_FOUND_DETAIL = {
+    "code": "ACCOUNT_NOT_FOUND",
+    "message": "Account not found.",
+}
+ACCOUNT_INACTIVE_DETAIL = {
+    "code": "ACCOUNT_INACTIVE",
+    "message": "Account is inactive.",
+}
+INSUFFICIENT_BALANCE_DETAIL = {
+    "code": "INSUFFICIENT_BALANCE",
+    "message": "Insufficient available balance.",
+}
+TRANSACTION_ID_CONFLICT_DETAIL = {
+    "code": "TRANSACTION_ID_CONFLICT",
+    "message": "Transaction ID was already used for a different debit.",
+}
 DEBIT_ROLLED_BACK_DETAIL = {
     "code": "DEBIT_ROLLED_BACK",
-    "message": (
-        "Database is temporarily unavailable; debit was rolled back. "
-        "Retry with the same transaction ID"
-    ),
+    "message": "Debit was rolled back successfully.",
 }
 DEBIT_OUTCOME_UNKNOWN_DETAIL = {
     "code": "DEBIT_OUTCOME_UNKNOWN",
-    "message": (
-        "Debit outcome could not be confirmed; reconcile before retrying with the "
-        "same transaction ID"
-    ),
+    "message": "Debit outcome could not be confirmed.",
 }
 logger = logging.getLogger(__name__)
 
@@ -58,6 +68,29 @@ def get_internal_account(db: Session, account_number: str) -> Account:
     return account
 
 
+def _get_debit_account(db: Session, account_number: str) -> Account:
+    try:
+        return get_internal_account(db, account_number)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=ACCOUNT_NOT_FOUND_DETAIL,
+            ) from exc
+        raise
+
+
+def get_debit_status(
+    db: Session, transaction_id: str
+) -> Literal["DEBITED", "NOT_FOUND"]:
+    found_transaction_id = db.scalar(
+        select(AccountDebit.transaction_id).where(
+            AccountDebit.transaction_id == transaction_id
+        )
+    )
+    return "DEBITED" if found_transaction_id is not None else "NOT_FOUND"
+
+
 def debit_account(db: Session, account_number: str, debit: DebitRequest) -> Account:
     return _debit_account(db, account_number, debit)
 
@@ -71,15 +104,18 @@ def _debit_account(db: Session, account_number: str, debit: DebitRequest) -> Acc
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Transaction ID was already used for a different debit",
+                detail=TRANSACTION_ID_CONFLICT_DETAIL,
             )
-        account = get_internal_account(db, account_number)
+        account = _get_debit_account(db, account_number)
         account.balance = previous_debit.balance_after
         return account
 
-    account = get_internal_account(db, account_number)
+    account = _get_debit_account(db, account_number)
     if account.status != "ACTIVE":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account is inactive")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=ACCOUNT_INACTIVE_DETAIL,
+        )
 
     debit_record = AccountDebit(
         transaction_id=debit.transaction_id,
@@ -93,7 +129,13 @@ def _debit_account(db: Session, account_number: str, debit: DebitRequest) -> Acc
         try:
             db.flush()
         except IntegrityError:
-            db.rollback()
+            try:
+                db.rollback()
+            except Exception as rollback_error:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=DEBIT_OUTCOME_UNKNOWN_DETAIL,
+                ) from rollback_error
             previous_debit = db.get(AccountDebit, debit.transaction_id)
             if previous_debit is None:
                 raise
@@ -103,13 +145,13 @@ def _debit_account(db: Session, account_number: str, debit: DebitRequest) -> Acc
             ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Transaction ID was already used for a different debit",
+                    detail=TRANSACTION_ID_CONFLICT_DETAIL,
                 )
-            account = get_internal_account(db, account_number)
+            account = _get_debit_account(db, account_number)
             account.balance = previous_debit.balance_after
             return account
 
-        result = db.execute(
+        result = db.connection().execute(
             update(Account)
             .where(
                 Account.account_number == account_number,
@@ -118,12 +160,10 @@ def _debit_account(db: Session, account_number: str, debit: DebitRequest) -> Acc
             )
             .values(balance=Account.balance - debit.amount)
         )
-        if not isinstance(result, CursorResult):
-            raise RuntimeError("Account debit UPDATE did not return a cursor result")
         if result.rowcount != 1:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Insufficient available balance",
+                detail=INSUFFICIENT_BALANCE_DETAIL,
             )
 
         balance_after = db.scalar(

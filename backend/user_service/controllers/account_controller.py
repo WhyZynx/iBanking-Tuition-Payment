@@ -11,9 +11,15 @@ from backend.user_service.schemas.account_schema import (
     AccountResponse,
     DebitRequest,
     DebitResponse,
+    DebitStatusResponse,
     InternalAccountResponse,
 )
-from backend.user_service.services.account_service import debit_account, get_internal_account, get_user_accounts
+from backend.user_service.services.account_service import (
+    debit_account,
+    get_debit_status,
+    get_internal_account,
+    get_user_accounts,
+)
 
 
 def require_internal_api_key(x_internal_api_key: str | None = Header(default=None)) -> None:
@@ -25,6 +31,11 @@ router = APIRouter(prefix="/api/v1/accounts", tags=["Accounts"])
 internal_router = APIRouter(
     prefix="/api/v1/internal/accounts",
     tags=["Internal Accounts"],
+    dependencies=[Depends(require_internal_api_key)],
+)
+internal_debit_router = APIRouter(
+    prefix="/api/v1/internal/debits",
+    tags=["Internal Debits"],
     dependencies=[Depends(require_internal_api_key)],
 )
 
@@ -64,3 +75,16 @@ def debit_account_for_service(
 ) -> DebitResponse:
     account = debit_account(db, account_number, payload)
     return DebitResponse(account_number=account.account_number, remaining_balance=account.balance)
+
+
+@internal_debit_router.get(
+    "/{transaction_id}",
+    response_model=DebitStatusResponse,
+    summary="Read the status of an account debit",
+)
+def get_debit_status_for_service(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+) -> DebitStatusResponse:
+    debit_status = get_debit_status(db, transaction_id)
+    return DebitStatusResponse(transaction_id=transaction_id, status=debit_status)

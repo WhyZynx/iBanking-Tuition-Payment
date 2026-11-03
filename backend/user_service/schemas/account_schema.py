@@ -1,4 +1,5 @@
 ﻿from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
@@ -37,3 +38,8 @@ class DebitResponse(BaseModel):
     def serialize_remaining_balance(self, balance: Decimal) -> int | float:
         value = balance.quantize(Decimal("0.01"))
         return int(value) if value == value.to_integral_value() else float(value)
+
+
+class DebitStatusResponse(BaseModel):
+    transaction_id: str
+    status: Literal["DEBITED", "NOT_FOUND"]

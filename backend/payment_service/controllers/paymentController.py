@@ -82,10 +82,6 @@ def create_payment(
     db_session: Session = Depends(get_db),
 ):
     TransactionModel.fail_expired_pending(db_session)
-    TransactionModel.mark_stale_processing_for_reconciliation(
-        db_session,
-        payer_user_id=current_user_id,
-    )
 
     return payment_service.create_payment(
         db_session=db_session,

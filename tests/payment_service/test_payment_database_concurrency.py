@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Barrier
 
@@ -65,7 +65,7 @@ def test_transaction_processing_claim_is_atomic(tmp_path):
 
 def test_stale_processing_transaction_requires_reconciliation(tmp_path):
     engine, session_factory = create_database(tmp_path)
-    stale_started_at = datetime.now() - timedelta(minutes=5)
+    stale_started_at = (datetime.now(timezone.utc) - timedelta(minutes=5)).replace(tzinfo=None)
     with session_factory() as session:
         session.execute(
             text("UPDATE transactions SET status='PROCESSING', completed_at=:started_at WHERE transaction_id='race-tx'"),

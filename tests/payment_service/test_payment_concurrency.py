@@ -1,5 +1,6 @@
 import json
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from decimal import Decimal
 from threading import Lock
 from types import SimpleNamespace
@@ -70,7 +71,7 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
         transaction.status = "SUCCESS"
         transaction.amount = amount
         state["successes"].append(transaction_id)
-        return SimpleNamespace(isoformat=lambda: "2026-09-29T12:00:00")
+        return datetime.now(timezone.utc)
 
     def update_transaction(_db, transaction_id, new_status):
         transactions[transaction_id].status = new_status

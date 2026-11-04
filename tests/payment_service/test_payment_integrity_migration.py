@@ -131,3 +131,33 @@ def test_canonical_payment_schema_upgrades_legacy_tables_safely():
 def test_docker_uses_the_canonical_payment_schema():
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     assert "./db/payment/payment_init.sql:/docker-entrypoint-initdb.d/04-payment-init.sql:ro" in compose
+
+
+def test_student_id_migration_is_safe_to_resume_after_partial_ddl():
+    migration = Path("db/user/add_user_student_id.sql").read_text(encoding="utf-8")
+    assert "information_schema.columns" in migration
+    assert "IF has_student_id = 0 THEN" in migration
+    assert "information_schema.statistics" in migration
+    assert "IF has_student_id_unique_index = 0 THEN" in migration
+    assert "CALL upgrade_user_student_id();" in migration
+
+
+def test_setup_runners_verify_schema_before_recording_migrations():
+    powershell = Path("setup-db.ps1").read_text(encoding="utf-8")
+    shell = Path("setup-db.sh").read_text(encoding="utf-8")
+
+    assert powershell.index(
+        "$schemaValid = Test-MigrationSchema $migration.Version"
+    ) < powershell.index(
+        'Invoke-MySql "INSERT INTO $($migration.Database).schema_migrations'
+    )
+    assert shell.index(
+        'if migration_is_valid "$version"; then'
+    ) < shell.index(
+        'mysql_query "INSERT INTO ${database}.schema_migrations'
+    )
+    for runner in (powershell, shell):
+        assert "information_schema.statistics" in runner
+        assert "information_schema.key_column_usage" in runner
+        assert "information_schema.check_constraints" in runner
+        assert "schema was verified" in runner.lower()

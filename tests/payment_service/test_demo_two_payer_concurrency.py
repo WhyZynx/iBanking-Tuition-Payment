@@ -19,7 +19,7 @@ import requests
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = os.getenv("IBANKING_DEMO_BASE_URL", "http://localhost:8080").rstrip("/")
-FIRST_USERNAME = os.getenv("IBANKING_DEMO_FIRST_USERNAME", "user01")
+FIRST_USERNAME = os.getenv("IBANKING_DEMO_FIRST_USERNAME", "user08")
 FIRST_PASSWORD = os.getenv("IBANKING_DEMO_FIRST_PASSWORD", "password123")
 SECOND_USERNAME = os.getenv("IBANKING_DEMO_SECOND_USERNAME", "user04")
 SECOND_PASSWORD = os.getenv("IBANKING_DEMO_SECOND_PASSWORD", "password123")
@@ -124,8 +124,12 @@ def test_two_demo_accounts_concurrently_pay_the_same_tuition():
     assert FIRST_USERNAME != SECOND_USERNAME, "Use two different demo users"
     mysql_query("SELECT 1;")
 
+    first_headers = login(FIRST_USERNAME, FIRST_PASSWORD)
+    second_headers = login(SECOND_USERNAME, SECOND_PASSWORD)
+
     tuition_response = requests.get(
         f"{BASE_URL}/api/v1/tuition/{STUDENT_ID}",
+        headers=first_headers,
         timeout=TIMEOUT,
     )
     assert tuition_response.status_code == 200, (
@@ -137,8 +141,6 @@ def test_two_demo_accounts_concurrently_pay_the_same_tuition():
     )
     amount = Decimal(str(tuition["amount"]))
 
-    first_headers = login(FIRST_USERNAME, FIRST_PASSWORD)
-    second_headers = login(SECOND_USERNAME, SECOND_PASSWORD)
     first_account = payment_account(first_headers, amount)
     second_account = payment_account(second_headers, amount)
     assert first_account["accountNumber"] != second_account["accountNumber"], (
@@ -258,6 +260,7 @@ def test_two_demo_accounts_concurrently_pay_the_same_tuition():
 
     final_tuition_response = requests.get(
         f"{BASE_URL}/api/v1/tuition/{STUDENT_ID}",
+        headers=first_headers,
         timeout=TIMEOUT,
     )
     assert final_tuition_response.status_code == 200

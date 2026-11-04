@@ -174,53 +174,12 @@ function Show-DemoData {
     [void](Read-Host 'Press Enter to return to the menu')
 }
 
-function Invoke-DemoDatabaseReset {
-    $resetScript = Join-Path $PSScriptRoot 'reset-demo-database.ps1'
-    if (-not (Test-Path -LiteralPath $resetScript -PathType Leaf)) {
-        Write-Host 'Database reset is unavailable: reset-demo-database.ps1 was not found.' -ForegroundColor Red
-        return
-    }
-    if (-not (Get-Command powershell.exe -ErrorAction SilentlyContinue)) {
-        Write-Host 'Database reset is unavailable: Windows PowerShell could not be found.' -ForegroundColor Red
-        return
-    }
-
-    Write-Host ''
-    Write-Host 'WARNING: Resetting permanently deletes all data in these demo databases:' -ForegroundColor Red
-    Write-Host '  ibanking_account_db'
-    Write-Host '  ibanking_tuition_db'
-    Write-Host '  ibanking_payment_db'
-    Write-Host 'The reset preserves the mysql_data Docker volume and does not target other Docker projects.'
-    Write-Host 'The reset script will require the exact confirmation: RESET ibanking-demo' -ForegroundColor Yellow
-    Write-Host ''
-
-    try {
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $resetScript
-        $resetExitCode = $LASTEXITCODE
-    }
-    catch {
-        Write-Host "Database reset could not be started: $($_.Exception.Message)" -ForegroundColor Red
-        return
-    }
-
-    if ($resetExitCode -eq 0) {
-        Write-Host 'Demo database reset completed successfully.' -ForegroundColor Green
-    }
-    elseif ($resetExitCode -eq 2) {
-        Write-Host 'Reset cancelled. No database changes were made.' -ForegroundColor Yellow
-    }
-    else {
-        Write-Host "Database reset failed with exit code $resetExitCode. It was not retried." -ForegroundColor Red
-    }
-}
-
 while ($true) {
     Write-Host ''
     Write-Host '[1] View current demo data'
     Write-Host '[2] Open iBanking frontend'
     Write-Host '[3] Open Mailpit inbox'
     Write-Host '[4] Configure email delivery'
-    Write-Host '[5] Reset Demo Databases'
     Write-Host '[0] Exit setup (keep services running)'
     $choice = Read-Host 'Choose an option'
     switch ($choice.Trim()) {
@@ -228,8 +187,7 @@ while ($true) {
         '2' { Start-Process (Get-LocalUrl 'FRONTEND_PORT' '8080') }
         '3' { Start-Process (Get-LocalUrl 'MAILPIT_WEB_PORT' '8025') }
         '4' { Show-EmailMenu }
-        '5' { Invoke-DemoDatabaseReset }
         '0' { exit 0 }
-        default { Write-Host 'Please enter 1, 2, 3, 4, 5, or 0.' -ForegroundColor Yellow }
+        default { Write-Host 'Please enter 1, 2, 3, 4, or 0.' -ForegroundColor Yellow }
     }
 }

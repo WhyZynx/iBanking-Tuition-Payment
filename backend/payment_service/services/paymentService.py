@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 class PaymentService:
+    DEBIT_ROLLED_BACK_CODES = {
+        "DEBIT_ROLLED_BACK",
+        "ACCOUNT_NOT_FOUND",
+        "ACCOUNT_INACTIVE",
+        "INSUFFICIENT_BALANCE",
+    }
+
     @staticmethod
     def fail_pending_if_tuition_paid(db_session, transaction_id, student_id):
         headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
@@ -419,6 +426,26 @@ class PaymentService:
             TransactionModel.release_processing(db_session, transaction_id)
             raise HTTPException(status_code=400, detail="OTP is invalid, expired, or already used")
 
+        try:
+            amount_saved = TransactionModel.update_processing_amount(
+                db_session, transaction_id, amount
+            )
+        except Exception as exc:
+            logger.exception(
+                "Could not persist debit amount for transaction %s",
+                transaction_id,
+            )
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Could not safely prepare the debit",
+            ) from exc
+        if not amount_saved:
+            self._release_tuition_claim(student_id, transaction_id, headers)
+            TransactionModel.release_processing(db_session, transaction_id)
+            raise HTTPException(status_code=409, detail="Transaction is no longer being processed")
+
         debit_url = (
             f"{USER_SERVICE_URL}/api/v1/internal/accounts/"
             f"{quote(account_number, safe='')}/debit"
@@ -446,24 +473,36 @@ class PaymentService:
                 detail="User Service debit outcome is unknown; transaction requires reconciliation",
             ) from exc
 
-        if debit_response.status_code == status.HTTP_404_NOT_FOUND:
-            self._release_tuition_claim(student_id, transaction_id, headers)
-            self._mark_transaction_failed(db_session, transaction_id)
-            raise HTTPException(status_code=404, detail="Account not found")
-        if debit_response.status_code == status.HTTP_409_CONFLICT:
-            self._release_tuition_claim(student_id, transaction_id, headers)
-            self._mark_transaction_failed(db_session, transaction_id)
-            raise HTTPException(status_code=409, detail="Account is inactive or has insufficient balance")
         if debit_response.status_code != status.HTTP_200_OK:
+            debit_error_code = self._debit_error_code(debit_response)
+            if debit_error_code in self.DEBIT_ROLLED_BACK_CODES:
+                failed = self._mark_transaction_failed(db_session, transaction_id)
+                if not failed:
+                    self._mark_transaction_reconciliation_required(
+                        db_session, transaction_id
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Debit was rolled back but Payment could not record the failure; transaction requires reconciliation",
+                    )
+                self._release_tuition_claim(student_id, transaction_id, headers)
+                raise HTTPException(
+                    status_code=debit_response.status_code
+                    if debit_response.status_code in (404, 409)
+                    else status.HTTP_409_CONFLICT,
+                    detail="Debit was rolled back; payment failed",
+                )
+
             logger.error(
-                "User Service returned HTTP %s while debiting transaction %s; transaction requires reconciliation",
+                "User Service returned HTTP %s with debit outcome %s for transaction %s; reconciliation required",
                 debit_response.status_code,
+                debit_error_code or "unknown",
                 transaction_id,
             )
             self._mark_transaction_reconciliation_required(db_session, transaction_id)
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="User Service debit failed; transaction requires reconciliation",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User Service debit outcome is unknown; transaction requires reconciliation",
             )
 
         tuition_pay_url = f"{TUITION_SERVICE_URL}/api/v1/tuition/{quote(student_id, safe='')}/pay"
@@ -584,6 +623,171 @@ class PaymentService:
             "completed_at": serialize_utc_datetime(saved_completed_at),
         }
 
+    def reconcile_payment(self, db_session, transaction_id, payer_user_id):
+        transaction = TransactionModel.find_by_id(db_session, transaction_id)
+        if transaction is None:
+            raise HTTPException(status_code=404, detail="Transaction not found")
+        if transaction.payer_user_id != payer_user_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Transaction does not belong to the authenticated user",
+            )
+        if transaction.status != "RECONCILIATION_REQUIRED":
+            raise HTTPException(
+                status_code=409,
+                detail="Transaction does not require reconciliation",
+            )
+
+        headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
+        try:
+            response = requests.get(
+                f"{USER_SERVICE_URL}/api/v1/internal/debits/"
+                f"{quote(transaction_id, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="User Service debit status is unavailable; transaction remains under reconciliation",
+            ) from exc
+
+        if response.status_code != status.HTTP_200_OK:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service could not retrieve the debit status",
+            )
+        try:
+            debit_status = response.json()
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service returned invalid debit status",
+            ) from exc
+        if (
+            not isinstance(debit_status, dict)
+            or debit_status.get("transaction_id") != transaction_id
+            or debit_status.get("status") not in ("DEBITED", "NOT_FOUND")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="User Service returned invalid debit status",
+            )
+
+        if debit_status["status"] == "NOT_FOUND":
+            return {
+                "transaction_id": transaction_id,
+                "status": "RECONCILIATION_REQUIRED",
+                "debit_status": "NOT_FOUND",
+                "message": "No debit record is visible yet; the claim remains held pending another check.",
+            }
+
+        if not TransactionModel.claim_reconciliation_for_processing(
+            db_session, transaction_id, payer_user_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Transaction is already being reconciled",
+            )
+
+        try:
+            amount = Decimal(str(transaction.amount))
+            if not amount.is_finite() or amount <= 0:
+                raise ValueError("Invalid recorded debit amount")
+
+            tuition_response = requests.get(
+                f"{TUITION_SERVICE_URL}/api/v1/tuition/"
+                f"{quote(transaction.student_id, safe='')}",
+                headers=headers,
+                timeout=5,
+            )
+            if tuition_response.status_code != status.HTTP_200_OK:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Could not verify tuition after confirming the debit",
+                )
+            tuition = tuition_response.json()
+            if not isinstance(tuition, dict):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Tuition Service returned invalid data",
+                )
+
+            if tuition.get("status") == "UNPAID":
+                tuition_amount = Decimal(str(tuition["amount"]))
+                if not tuition_amount.is_finite() or tuition_amount != amount:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Tuition amount changed after debit; transaction requires manual review",
+                    )
+                tuition_pay_response = requests.put(
+                    f"{TUITION_SERVICE_URL}/api/v1/tuition/"
+                    f"{quote(transaction.student_id, safe='')}/pay",
+                    headers=headers,
+                    timeout=5,
+                )
+                if tuition_pay_response.status_code != status.HTTP_200_OK:
+                    raise HTTPException(
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                        detail="Debit is confirmed but tuition could not be updated; transaction remains under reconciliation",
+                    )
+            elif tuition.get("status") != "PAID":
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Tuition Service returned an unsupported status",
+                )
+
+            completed_at = TransactionModel.complete(
+                db_session, transaction_id, amount
+            )
+            if completed_at is None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Confirmed debit could not be finalized; transaction remains under reconciliation",
+                )
+        except (
+            requests.RequestException,
+            InvalidOperation,
+            ValueError,
+            KeyError,
+            TypeError,
+        ) as exc:
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
+            logger.exception(
+                "Reconciliation could not complete transaction %s",
+                transaction_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Confirmed debit could not be fully reconciled; transaction remains under reconciliation",
+            ) from exc
+        except HTTPException:
+            self._mark_transaction_reconciliation_required(db_session, transaction_id)
+            raise
+
+        return {
+            "transaction_id": transaction_id,
+            "status": "SUCCESS",
+            "student_id": transaction.student_id,
+            "student_name": transaction.student_name,
+            "amount": amount,
+            "completed_at": serialize_utc_datetime(completed_at),
+        }
+
+    @staticmethod
+    def _debit_error_code(response):
+        try:
+            payload = response.json()
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(payload, dict):
+            return None
+        detail = payload.get("detail")
+        if not isinstance(detail, dict):
+            return None
+        code = detail.get("code")
+        return code if isinstance(code, str) else None
+
     @staticmethod
     def _finish_payment_as_failed(db_session, transaction_id, otp_id):
         if not TransactionModel.update_status(db_session, transaction_id, "FAILED"):
@@ -622,11 +826,14 @@ class PaymentService:
                     "Could not mark transaction %s FAILED after a possible debit",
                     transaction_id,
                 )
+                return False
+            return True
         except Exception:
             logger.exception(
                 "Could not record failure for transaction %s after a possible debit",
                 transaction_id,
             )
+            return False
 
     @staticmethod
     def _mark_transaction_reconciliation_required(db_session, transaction_id):
@@ -636,8 +843,11 @@ class PaymentService:
                     "Could not mark transaction %s for reconciliation",
                     transaction_id,
                 )
+                return False
+            return True
         except Exception:
             logger.exception(
                 "Could not record reconciliation requirement for transaction %s",
                 transaction_id,
             )
+            return False

@@ -73,6 +73,12 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
         state["successes"].append(transaction_id)
         return datetime.now(timezone.utc)
 
+    def update_processing_amount(_db, transaction_id, amount):
+        if transactions[transaction_id].status != "PROCESSING":
+            return False
+        transactions[transaction_id].amount = amount
+        return True
+
     def update_transaction(_db, transaction_id, new_status):
         transactions[transaction_id].status = new_status
         return True
@@ -133,6 +139,11 @@ def test_two_payers_confirming_same_student_only_one_is_debited(monkeypatch):
     monkeypatch.setattr(transactionModel.TransactionModel, "claim_for_processing", claim_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "release_processing", release_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "complete", complete_transaction)
+    monkeypatch.setattr(
+        transactionModel.TransactionModel,
+        "update_processing_amount",
+        update_processing_amount,
+    )
     monkeypatch.setattr(transactionModel.TransactionModel, "update_status", update_transaction)
     monkeypatch.setattr(otpModel.OtpModel, "verify", verify_otp)
     monkeypatch.setattr(otpModel.OtpModel, "mark_as_used", consume_otp)

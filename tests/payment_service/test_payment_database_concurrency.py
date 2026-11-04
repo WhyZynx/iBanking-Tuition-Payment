@@ -20,6 +20,7 @@ def create_database(tmp_path: Path):
             CREATE TABLE transactions (
                 transaction_id TEXT PRIMARY KEY,
                 payer_user_id INTEGER NOT NULL,
+                amount NUMERIC NULL,
                 status TEXT NOT NULL,
                 completed_at DATETIME NULL
             )
@@ -84,6 +85,37 @@ def test_stale_processing_transaction_requires_reconciliation(tmp_path):
         ).one()
     assert transaction.status == "RECONCILIATION_REQUIRED"
     assert transaction.completed_at is None
+    engine.dispose()
+
+
+def test_reconciliation_claim_persists_the_debit_amount(tmp_path):
+    engine, session_factory = create_database(tmp_path)
+    with session_factory() as session:
+        session.execute(
+            text("""
+                UPDATE transactions
+                SET status='RECONCILIATION_REQUIRED'
+                WHERE transaction_id='race-tx'
+            """)
+        )
+        session.commit()
+
+        assert TransactionModel.claim_reconciliation_for_processing(
+            session, "race-tx", 7
+        )
+        assert not TransactionModel.claim_reconciliation_for_processing(
+            session, "race-tx", 7
+        )
+        assert TransactionModel.update_processing_amount(
+            session, "race-tx", 1250.75
+        )
+
+    with session_factory() as session:
+        transaction = session.execute(
+            text("SELECT status, amount FROM transactions WHERE transaction_id='race-tx'")
+        ).one()
+    assert transaction.status == "PROCESSING"
+    assert float(transaction.amount) == 1250.75
     engine.dispose()
 
 

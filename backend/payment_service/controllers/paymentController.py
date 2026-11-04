@@ -125,6 +125,19 @@ def get_payment_status(
     }
 
 
+@router.post("/api/v1/payments/{transaction_id}/reconcile")
+def reconcile_payment(
+    transaction_id: str,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    return payment_service.reconcile_payment(
+        db_session=db_session,
+        transaction_id=transaction_id,
+        payer_user_id=current_user_id,
+    )
+
+
 @router.post("/api/v1/payments/{transaction_id}/otp")
 def request_otp(
     transaction_id: str,

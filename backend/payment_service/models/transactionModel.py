@@ -151,6 +151,42 @@ class TransactionModel:
         return result.rowcount == 1
 
     @staticmethod
+    def claim_reconciliation_for_processing(db_session, transaction_id, payer_user_id):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET status = 'PROCESSING',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE transaction_id = :id
+                  AND payer_user_id = :user_id
+                  AND status = 'RECONCILIATION_REQUIRED'
+            """),
+            {
+                "id": transaction_id,
+                "user_id": payer_user_id,
+            },
+        )
+        db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
+    def update_processing_amount(db_session, transaction_id, amount):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET amount = :amount
+                WHERE transaction_id = :id
+                  AND status = 'PROCESSING'
+            """),
+            {
+                "amount": amount,
+                "id": transaction_id,
+            },
+        )
+        db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
     def mark_stale_processing_for_reconciliation(
         db_session,
         transaction_id=None,

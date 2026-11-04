@@ -81,6 +81,10 @@ def payment_client(monkeypatch):
             "status": "ACTIVE",
         }),
         "debit": FakeResponse(200, {"success": True}),
+        "debit_status": FakeResponse(200, {
+            "transaction_id": TRANSACTION_ID,
+            "status": "NOT_FOUND",
+        }),
         "tuition_pay": FakeResponse(200, {"status": "PAID"}),
         "tuition_claim": FakeResponse(201, {"student_id": STUDENT_ID, "transaction_id": TRANSACTION_ID}),
         "get_exception_contains": None,
@@ -102,6 +106,8 @@ def payment_client(monkeypatch):
             return FakeResponse(200, {"email": "payer@example.test"})
         if "/api/v1/tuition/" in url:
             return state["tuition"]
+        if "/api/v1/internal/debits/" in url:
+            return state["debit_status"]
         if "/api/v1/internal/accounts/" in url:
             return state["account"]
         raise AssertionError(f"Unexpected GET URL: {url}")
@@ -164,6 +170,22 @@ def payment_client(monkeypatch):
         status_updates.append("RECONCILIATION_REQUIRED")
         return True
 
+    def claim_reconciliation(_db, transaction_id, payer_user_id):
+        if (
+            transaction_id != TRANSACTION_ID
+            or payer_user_id != transaction.payer_user_id
+            or transaction.status != "RECONCILIATION_REQUIRED"
+        ):
+            return False
+        transaction.status = "PROCESSING"
+        return True
+
+    def update_processing_amount(_db, transaction_id, amount):
+        if transaction_id != TRANSACTION_ID or transaction.status != "PROCESSING":
+            return False
+        transaction.amount = amount
+        return True
+
     def claim_transaction(_db, transaction_id, payer_user_id):
         with transaction_claim_lock:
             if (
@@ -208,11 +230,21 @@ def payment_client(monkeypatch):
         lambda _db, **_kwargs: 0,
     )
     monkeypatch.setattr(transactionModel.TransactionModel, "complete", complete_transaction)
+    monkeypatch.setattr(
+        transactionModel.TransactionModel,
+        "update_processing_amount",
+        update_processing_amount,
+    )
     monkeypatch.setattr(transactionModel.TransactionModel, "update_status", update_transaction_status)
     monkeypatch.setattr(
         transactionModel.TransactionModel,
         "mark_reconciliation_required",
         mark_reconciliation_required,
+    )
+    monkeypatch.setattr(
+        transactionModel.TransactionModel,
+        "claim_reconciliation_for_processing",
+        claim_reconciliation,
     )
     monkeypatch.setattr(transactionModel.TransactionModel, "claim_for_processing", claim_transaction)
     monkeypatch.setattr(transactionModel.TransactionModel, "release_processing", release_transaction)
@@ -623,7 +655,9 @@ def test_same_transaction_confirmed_concurrently_is_debited_once(payment_client)
 
 def test_debit_conflict_does_not_update_tuition_or_consume_otp(payment_client):
     client, transaction, state, calls, status_updates, headers = payment_client
-    state["debit"] = FakeResponse(409, {"detail": "Insufficient available balance"})
+    state["debit"] = FakeResponse(409, {
+        "detail": {"code": "INSUFFICIENT_BALANCE", "message": "Insufficient available balance"}
+    })
 
     response = confirm(client, headers)
 
@@ -638,7 +672,9 @@ def test_debit_conflict_does_not_update_tuition_or_consume_otp(payment_client):
 
 def test_debit_not_found_does_not_update_tuition(payment_client):
     client, transaction, state, calls, _, headers = payment_client
-    state["debit"] = FakeResponse(404)
+    state["debit"] = FakeResponse(404, {
+        "detail": {"code": "ACCOUNT_NOT_FOUND", "message": "Account not found"}
+    })
 
     response = confirm(client, headers)
 
@@ -647,6 +683,82 @@ def test_debit_not_found_does_not_update_tuition(payment_client):
     assert calls["delete"]
     assert transaction.status == "FAILED"
     assert state["otp_used"] is True
+
+
+def test_debit_rolled_back_code_fails_payment_and_releases_claim(payment_client):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    state["debit"] = FakeResponse(503, {
+        "detail": {
+            "code": "DEBIT_ROLLED_BACK",
+            "message": "Debit was rolled back successfully.",
+        }
+    })
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 409
+    assert transaction.status == "FAILED"
+    assert status_updates == ["FAILED"]
+    assert len(calls["delete"]) == 1
+    assert calls["put"] == []
+
+
+def test_unknown_debit_code_keeps_payment_and_claim_for_reconciliation(payment_client):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    state["debit"] = FakeResponse(503, {
+        "detail": {
+            "code": "DEBIT_OUTCOME_UNKNOWN",
+            "message": "Debit outcome could not be confirmed.",
+        }
+    })
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 503
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
+    assert calls["delete"] == []
+    assert calls["put"] == []
+
+
+def test_reconcile_debited_transaction_updates_tuition_and_completes(payment_client):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    transaction.status = "RECONCILIATION_REQUIRED"
+    transaction.amount = Decimal("5000000.25")
+    state["debit_status"] = FakeResponse(200, {
+        "transaction_id": TRANSACTION_ID,
+        "status": "DEBITED",
+    })
+
+    response = client.post(
+        f"/api/v1/payments/{TRANSACTION_ID}/reconcile",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "SUCCESS"
+    assert transaction.status == "SUCCESS"
+    assert calls["put"]
+    assert calls["delete"] == []
+    assert status_updates == ["SUCCESS"]
+
+
+def test_reconcile_not_found_keeps_reconciliation_and_claim(payment_client):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    transaction.status = "RECONCILIATION_REQUIRED"
+
+    response = client.post(
+        f"/api/v1/payments/{TRANSACTION_ID}/reconcile",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "RECONCILIATION_REQUIRED"
+    assert response.json()["debit_status"] == "NOT_FOUND"
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert calls["put"] == []
+    assert calls["delete"] == []
+    assert status_updates == []
 
 
 def test_unknown_debit_result_marks_transaction_for_reconciliation(payment_client):

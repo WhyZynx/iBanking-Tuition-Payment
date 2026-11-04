@@ -1,19 +1,23 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import text
+
+from backend.payment_service.time_utils import now_vn, VN_TZ
 
 
 PROCESSING_TIMEOUT = timedelta(seconds=90)
 
 
-def serialize_utc_datetime(value):
+def serialize_vn_datetime(value):
     if value is None:
         return None
+
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=VN_TZ)
     else:
-        value = value.astimezone(timezone.utc)
-    return value.isoformat().replace("+00:00", "Z")
+        value = value.astimezone(VN_TZ)
+
+    return value.isoformat()
 
 
 class TransactionModel:
@@ -198,7 +202,7 @@ class TransactionModel:
         if transaction_id is None and payer_user_id is None:
             return 0
 
-        cutoff = (datetime.now(timezone.utc) - PROCESSING_TIMEOUT).replace(tzinfo=None)
+        cutoff = now_vn() - PROCESSING_TIMEOUT
         result = db_session.execute(
             text("""
                 UPDATE transactions
@@ -255,7 +259,7 @@ class TransactionModel:
 
     @staticmethod
     def complete(db_session, transaction_id, amount):
-        completed_at = datetime.now(timezone.utc)
+        completed_at = now_vn()
         query = text("""
             UPDATE transactions
             SET amount = :amount,
@@ -325,9 +329,9 @@ class TransactionModel:
                 "sourceAccountNumber": row[3],
                 "amount": row[4],
                 "status": row[5],
-                "createdAt": serialize_utc_datetime(row[6]),
+                "createdAt": serialize_vn_datetime(row[6]),
                 "completedAt": (
-                    serialize_utc_datetime(row[7])
+                    serialize_vn_datetime(row[7])
                     if row[7] and row[5] in ("SUCCESS", "FAILED")
                     else None
                 ),

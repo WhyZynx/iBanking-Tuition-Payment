@@ -17,8 +17,9 @@ from backend.payment_service.config import (
 from backend.payment_service.models.otpModel import OtpModel
 from backend.payment_service.models.transactionModel import (
     TransactionModel,
-    serialize_utc_datetime,
+    serialize_vn_datetime,
 )
+from backend.payment_service.time_utils import now_vn
 from backend.payment_service.services.email_service import (
     send_otp_email,
     send_payment_success_email,
@@ -104,7 +105,7 @@ class PaymentService:
                 detail="Unable to generate a unique active OTP",
             )
 
-        expires_at = datetime.now() + timedelta(minutes=5)
+        expires_at = now_vn() + timedelta(minutes=5)
         otp_id = OtpModel.create(db_session, transaction_id, otp_code, expires_at)
         try:
             send_otp_email(email, transaction_id, otp_code, expires_at)
@@ -630,7 +631,7 @@ class PaymentService:
                 transaction.student_name,
             ),
             "amount": amount,
-            "completed_at": serialize_utc_datetime(saved_completed_at),
+            "completed_at": serialize_vn_datetime(saved_completed_at),
         }
 
     def reconcile_payment(self, db_session, transaction_id, payer_user_id):
@@ -786,7 +787,7 @@ class PaymentService:
             "student_id": transaction.student_id,
             "student_name": transaction.student_name,
             "amount": amount,
-            "completed_at": serialize_utc_datetime(completed_at),
+            "completed_at": serialize_vn_datetime(completed_at),
         }
 
     @staticmethod

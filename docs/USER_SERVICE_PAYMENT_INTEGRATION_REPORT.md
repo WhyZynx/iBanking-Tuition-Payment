@@ -210,6 +210,6 @@ Do not use the POST debit endpoint as a smoke test against demo data. MySQL conc
 - Parses `detail.code`: confirmed rollback fails the Payment transaction and releases the Tuition claim; unknown/malformed outcomes preserve reconciliation and the claim.
 - `TRANSACTION_ID_CONFLICT` is persisted as `reconciliation_code`, keeps the claim, and is excluded from automatic reconciliation because User's read endpoint does not expose amount/account for comparison. The UI instructs the payer not to retry and requires manual review.
 - Adds the authenticated Payment reconciliation endpoint. `DEBITED` can resume tuition completion without replaying the debit; `NOT_FOUND` preserves reconciliation and the claim because it is only a point-in-time observation.
-- Existing Payment databases require `db/payment/payment_reconciliation_code.sql` before deploying this branch. Fresh databases include the column in the init scripts.
+- Fresh and existing Payment databases use the single canonical script `db/payment/payment_init.sql`; it includes `reconciliation_code` and guarded upgrades for the older Payment schema.
 - Payment tests cover rollback, unknown outcome, ID conflict, claim handling, read-only status lookup, and the migration. MySQL-specific production behavior still requires validation against an approved isolated MySQL environment.
 - Safe Payment Service test run: **90 passed**; the two opt-in/demo database integration tests were excluded. Python/JavaScript syntax checks and `git diff --check` passed.

@@ -17,6 +17,7 @@ import pytest
 import requests
 
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BASE_URL = os.getenv("IBANKING_DEMO_BASE_URL", "http://localhost:8080").rstrip("/")
 FIRST_USERNAME = os.getenv("IBANKING_DEMO_FIRST_USERNAME", "user08")
@@ -87,9 +88,14 @@ def payment_account(headers: dict[str, str], amount: Decimal) -> dict:
         account
         for account in accounts
         if account["status"] == "ACTIVE"
-        and Decimal(str(account["balance"])) >= amount
+    and Decimal(str(account["balance"])) >= amount
     ]
-    assert eligible, f"No active account has enough balance for {amount} VND"
+
+    if not eligible:
+            pytest.skip(
+                f"No ACTIVE account has enough balance for "
+                f"{amount} VND."
+            )
     return next((account for account in eligible if account["isDefault"]), eligible[0])
 
 
@@ -104,51 +110,98 @@ def get_otp(transaction_id: str) -> str:
     assert re.fullmatch(r"\d{6}", code), f"Could not find an unused OTP for {transaction_id}"
     return code
 
+def validate_demo_preconditions(
+    first_headers: dict[str, str],
+    second_headers: dict[str, str],
+) -> tuple[dict, dict, Decimal]:
+    """Validate demo data before creating real payment transactions."""
 
-def test_two_demo_accounts_concurrently_pay_the_same_tuition():
-    if os.getenv("IBANKING_DEMO_CONCURRENCY_APPROVAL") != "YES":
-        pytest.fail(
-            "This test makes a real payment and leaves the bill PAID. "
-            "After confirming this is a disposable local demo database, run with "
-            "IBANKING_DEMO_CONCURRENCY_APPROVAL=YES."
-        )
-
-    parsed_url = urlparse(BASE_URL)
-    if parsed_url.scheme != "http" or parsed_url.hostname not in {
-        "localhost",
-        "127.0.0.1",
-        "::1",
-    }:
-        pytest.fail("The demo test only permits an HTTP service on this computer.")
-
-    assert FIRST_USERNAME != SECOND_USERNAME, "Use two different demo users"
-    mysql_query("SELECT 1;")
-
-    first_headers = login(FIRST_USERNAME, FIRST_PASSWORD)
-    second_headers = login(SECOND_USERNAME, SECOND_PASSWORD)
+    if FIRST_USERNAME == SECOND_USERNAME:
+        pytest.skip("Two different demo users are required.")
 
     tuition_response = requests.get(
         f"{BASE_URL}/api/v1/tuition/{STUDENT_ID}",
         headers=first_headers,
         timeout=TIMEOUT,
     )
+
     assert tuition_response.status_code == 200, (
-        f"Tuition lookup failed for {STUDENT_ID}: {tuition_response.text}"
+        f"Tuition lookup failed for {STUDENT_ID}: "
+        f"{tuition_response.text}"
     )
+
     tuition = tuition_response.json()
-    assert tuition["status"] == "UNPAID", (
-        f"{STUDENT_ID} must have an UNPAID bill; current status is {tuition['status']}"
-    )
+
+    if tuition.get("status") != "UNPAID":
+        pytest.skip(
+            f"Tuition bill {STUDENT_ID} is not UNPAID. "
+            f"Current status: {tuition.get('status')}."
+        )
+
     amount = Decimal(str(tuition["amount"]))
+
+    if not amount.is_finite() or amount <= 0:
+        pytest.skip(
+            f"Invalid tuition amount for {STUDENT_ID}: {amount}."
+        )
 
     first_account = payment_account(first_headers, amount)
     second_account = payment_account(second_headers, amount)
-    assert first_account["accountNumber"] != second_account["accountNumber"], (
-        "The two demo users must use different accounts"
-    )
+
+    if first_account["accountNumber"] == second_account["accountNumber"]:
+        pytest.skip(
+            "The two demo users must use different bank accounts."
+        )
+
     initial_balances = {
-        first_account["accountNumber"]: Decimal(str(first_account["balance"])),
-        second_account["accountNumber"]: Decimal(str(second_account["balance"])),
+        first_account["accountNumber"]: Decimal(
+            str(first_account["balance"])
+        ),
+        second_account["accountNumber"]: Decimal(
+            str(second_account["balance"])
+        ),
+    }
+
+    return first_account, second_account, amount
+
+
+@pytest.mark.demo_live
+def test_two_demo_accounts_concurrently_pay_the_same_tuition():
+    if os.getenv("IBANKING_DEMO_CONCURRENCY_APPROVAL") != "YES":
+        pytest.fail(
+            "This test makes real payments and modifies the demo database. "
+            "Use a disposable demo database and set "
+            "IBANKING_DEMO_CONCURRENCY_APPROVAL=YES."
+        )
+
+    parsed_url = urlparse(BASE_URL)
+
+    if parsed_url.scheme != "http" or parsed_url.hostname not in {
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
+        pytest.fail(
+            "The demo test only permits an HTTP service on this computer."
+        )
+
+    mysql_query("SELECT 1;")
+
+    first_headers = login(FIRST_USERNAME, FIRST_PASSWORD)
+    second_headers = login(SECOND_USERNAME, SECOND_PASSWORD)
+
+    first_account, second_account, amount = validate_demo_preconditions(
+        first_headers,
+        second_headers,
+    )
+
+    initial_balances = {
+        first_account["accountNumber"]: Decimal(
+            str(first_account["balance"])
+        ),
+        second_account["accountNumber"]: Decimal(
+            str(second_account["balance"])
+        ),
     }
 
     transactions = []

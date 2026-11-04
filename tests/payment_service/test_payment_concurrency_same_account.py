@@ -4,8 +4,9 @@ from decimal import Decimal
 from pathlib import Path
 from threading import Barrier
 
+import os
 import requests
-
+import pytest
 
 BASE_URL = "http://localhost:8080"
 ACCOUNT_NUMBER = "6202000001"
@@ -43,40 +44,67 @@ def mysql_query(database, sql):
     return result.stdout.strip()
 
 
-def setup_demo_database():
-    mysql_query(
+def validate_demo_preconditions():
+    initial_balance = mysql_query(
         "ibanking_account_db",
-        "DELETE FROM account_debits "
+        "SELECT CAST(balance AS CHAR) FROM accounts "
         f"WHERE account_number='{ACCOUNT_NUMBER}';",
     )
-    tuition_amounts = []
-    for student_id in STUDENT_IDS:
-        mysql_query(
-            "ibanking_tuition_db",
-            "UPDATE tuition_bills "
-            "SET status='UNPAID' "
-            f"WHERE student_id='{student_id}';",
-        )
-        amount = mysql_query(
-            "ibanking_tuition_db",
-            "SELECT CAST(amount AS CHAR) FROM tuition_bills "
-            f"WHERE student_id='{student_id}';",
-        )
-        tuition_amounts.append(Decimal(amount))
-    mysql_query(
-        "ibanking_payment_db",
-        "DELETE o FROM otps o JOIN transactions t "
-        "ON t.transaction_id=o.transaction_id "
-        "WHERE payer_user_id=1 "
-        "AND t.student_id IN ('524H0001','524H0002');",
-    )
-    mysql_query(
-        "ibanking_payment_db",
-        "DELETE FROM transactions "
-        "WHERE payer_user_id=1 "
-        "AND student_id IN ('524H0001','524H0002');",
-    )
 
+    if not initial_balance:
+        pytest.skip(
+            f"Demo account {ACCOUNT_NUMBER} does not exist."
+        )
+
+    initial_balance = Decimal(initial_balance)
+
+    tuition_amounts = {}
+
+    for student_id in STUDENT_IDS:
+        result = mysql_query(
+            "ibanking_tuition_db",
+            "SELECT CONCAT(status, '|', CAST(amount AS CHAR)) "
+            "FROM tuition_bills "
+            f"WHERE student_id='{student_id}';",
+        )
+
+        if not result:
+            pytest.skip(
+                f"Tuition bill for {student_id} does not exist."
+            )
+
+        parts = result.split("|")
+
+        if len(parts) != 2:
+            pytest.skip(
+                f"Invalid tuition data for {student_id}."
+            )
+
+        status, amount = parts
+
+        if status != "UNPAID":
+            pytest.skip(
+                f"{student_id} must have UNPAID tuition, "
+                f"but current status is {status}."
+            )
+
+        tuition_amounts[student_id] = Decimal(amount)
+
+    for student_id, amount in tuition_amounts.items():
+        if amount > initial_balance:
+            pytest.skip(
+                f"Account balance is insufficient for {student_id}."
+            )
+
+    total_tuition = sum(tuition_amounts.values(), Decimal("0"))
+
+    if total_tuition <= initial_balance:
+        pytest.skip(
+            "The total tuition of both students must exceed "
+            "the account balance to test the no-overdraft condition."
+        )
+
+    return initial_balance, tuition_amounts
 
 def get_unused_otp(transaction_id):
     otp_code = mysql_query(
@@ -89,21 +117,16 @@ def get_unused_otp(transaction_id):
         raise RuntimeError(f"OTP not found for transaction {transaction_id}")
     return otp_code
 
-
+@pytest.mark.demo_live
 def test_concurrent_payments_same_account_two_students_no_overdraft():
-    setup_demo_database()
-    initial_balance = mysql_query(
-        "ibanking_account_db",
-        "SELECT CAST(balance AS CHAR) FROM accounts "
-        f"WHERE account_number='{ACCOUNT_NUMBER}';",
-    )
-    tuition_amounts = {}
-    for student_id in STUDENT_IDS:
-        tuition_amounts[student_id] = Decimal(mysql_query(
-            "ibanking_tuition_db",
-            "SELECT CAST(amount AS CHAR) FROM tuition_bills "
-            f"WHERE student_id='{student_id}';",
-        ))
+    if os.getenv("IBANKING_DEMO_CONCURRENCY_APPROVAL") != "YES":
+        pytest.fail(
+            "This test makes a real payment and leaves the bill PAID. "
+            "After confirming this is a disposable local demo database, run with "
+            "IBANKING_DEMO_CONCURRENCY_APPROVAL=YES."
+        )
+
+    initial_balance, tuition_amounts = validate_demo_preconditions()
     assert all(
         amount <= Decimal(initial_balance) for amount in tuition_amounts.values()
     )

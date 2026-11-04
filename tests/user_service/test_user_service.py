@@ -773,10 +773,16 @@ def _mysql_test_database_url() -> str:
 
     parsed = urlsplit(database_url)
     database_name = unquote(parsed.path.lstrip("/"))
+    if os.getenv("IBANKING_MYSQL_INTEGRATION_APPROVAL") != "YES":
+        pytest.skip(
+            "Set IBANKING_MYSQL_INTEGRATION_APPROVAL=YES only for the disposable local MySQL test database"
+        )
     if parsed.scheme not in {"mysql", "mysql+pymysql"}:
         pytest.skip("USER_SERVICE_TEST_DATABASE_URL must use MySQL with PyMySQL")
     if database_name.lower() != "ibanking_account_db_test":
         pytest.skip("MySQL concurrency tests require the exact database name ibanking_account_db_test")
+    if (parsed.hostname or "").lower() not in {"localhost", "127.0.0.1", "::1"}:
+        pytest.fail("MySQL concurrency tests only permit a locally verified test server")
     return database_url
 
 
@@ -870,6 +876,7 @@ def _run_mysql_concurrent_debits(payloads: list[dict]):
         return list(executor.map(debit, payloads))
 
 
+@pytest.mark.mysql_integration
 def test_mysql_concurrent_distinct_transactions_do_not_overdraw(mysql_concurrency_database):
     responses = _run_mysql_concurrent_debits([
         {"amount": "80.00", "transactionId": "MYSQL-DISTINCT-1"},
@@ -886,6 +893,7 @@ def test_mysql_concurrent_distinct_transactions_do_not_overdraw(mysql_concurrenc
     db.close()
 
 
+@pytest.mark.mysql_integration
 def test_mysql_concurrent_same_transaction_debits_once(mysql_concurrency_database):
     payload = {"amount": "80.00", "transactionId": "MYSQL-SAME-TRANSACTION"}
     responses = _run_mysql_concurrent_debits([payload, payload])

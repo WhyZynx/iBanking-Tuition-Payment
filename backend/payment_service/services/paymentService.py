@@ -475,6 +475,16 @@ class PaymentService:
 
         if debit_response.status_code != status.HTTP_200_OK:
             debit_error_code = self._debit_error_code(debit_response)
+            if debit_error_code == "TRANSACTION_ID_CONFLICT":
+                self._mark_transaction_reconciliation_required(
+                    db_session,
+                    transaction_id,
+                    reason_code="TRANSACTION_ID_CONFLICT",
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Debit transaction ID conflicts with an existing debit; payment requires manual review",
+                )
             if debit_error_code in self.DEBIT_ROLLED_BACK_CODES:
                 failed = self._mark_transaction_failed(db_session, transaction_id)
                 if not failed:
@@ -636,6 +646,11 @@ class PaymentService:
             raise HTTPException(
                 status_code=409,
                 detail="Transaction does not require reconciliation",
+            )
+        if getattr(transaction, "reconciliation_code", None) == "TRANSACTION_ID_CONFLICT":
+            raise HTTPException(
+                status_code=409,
+                detail="Debit transaction ID conflicts with an existing debit; payment requires manual review",
             )
 
         headers = {"X-Internal-API-Key": INTERNAL_API_KEY}
@@ -836,9 +851,13 @@ class PaymentService:
             return False
 
     @staticmethod
-    def _mark_transaction_reconciliation_required(db_session, transaction_id):
+    def _mark_transaction_reconciliation_required(
+        db_session, transaction_id, reason_code=None
+    ):
         try:
-            if not TransactionModel.mark_reconciliation_required(db_session, transaction_id):
+            if not TransactionModel.mark_reconciliation_required(
+                db_session, transaction_id, reason_code=reason_code
+            ):
                 logger.error(
                     "Could not mark transaction %s for reconciliation",
                     transaction_id,

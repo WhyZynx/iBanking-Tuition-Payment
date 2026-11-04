@@ -117,6 +117,7 @@ def get_payment_status(
         "source_account_number": transaction.source_account_number,
         "amount": transaction.amount,
         "status": transaction.status,
+        "reconciliation_code": getattr(transaction, "reconciliation_code", None),
         "completed_at": (
             serialize_utc_datetime(transaction.completed_at)
             if transaction.completed_at and transaction.status in ("SUCCESS", "FAILED")

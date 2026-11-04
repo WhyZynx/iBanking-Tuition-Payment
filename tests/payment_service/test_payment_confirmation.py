@@ -64,6 +64,7 @@ def payment_client(monkeypatch):
         student_name="Nguyen Van B",
         amount=Decimal("4500000.00"),
         status="PENDING",
+        reconciliation_code=None,
         completed_at=None,
     )
     state = {
@@ -163,10 +164,11 @@ def payment_client(monkeypatch):
         status_updates.append(new_status)
         return True
 
-    def mark_reconciliation_required(_db, transaction_id):
+    def mark_reconciliation_required(_db, transaction_id, reason_code=None):
         if transaction_id != TRANSACTION_ID or transaction.status != "PROCESSING":
             return False
         transaction.status = "RECONCILIATION_REQUIRED"
+        transaction.reconciliation_code = reason_code
         status_updates.append("RECONCILIATION_REQUIRED")
         return True
 
@@ -175,6 +177,7 @@ def payment_client(monkeypatch):
             transaction_id != TRANSACTION_ID
             or payer_user_id != transaction.payer_user_id
             or transaction.status != "RECONCILIATION_REQUIRED"
+            or transaction.reconciliation_code is not None
         ):
             return False
         transaction.status = "PROCESSING"
@@ -653,7 +656,7 @@ def test_same_transaction_confirmed_concurrently_is_debited_once(payment_client)
     assert status_updates == ["SUCCESS"]
 
 
-def test_debit_conflict_does_not_update_tuition_or_consume_otp(payment_client):
+def test_insufficient_balance_does_not_update_tuition_or_consume_otp(payment_client):
     client, transaction, state, calls, status_updates, headers = payment_client
     state["debit"] = FakeResponse(409, {
         "detail": {"code": "INSUFFICIENT_BALANCE", "message": "Insufficient available balance"}
@@ -721,6 +724,58 @@ def test_unknown_debit_code_keeps_payment_and_claim_for_reconciliation(payment_c
     assert calls["put"] == []
 
 
+@pytest.mark.parametrize(
+    "error_payload",
+    [
+        {"detail": {"code": "UNRECOGNIZED_DEBIT_ERROR"}},
+        {"detail": "unstructured error"},
+        ["invalid response shape"],
+    ],
+)
+def test_unrecognized_or_malformed_debit_error_keeps_claim(
+    payment_client, error_payload
+):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    state["debit"] = FakeResponse(409, error_payload)
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 503
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
+    assert calls["delete"] == []
+    assert calls["put"] == []
+
+
+def test_transaction_id_conflict_keeps_claim_and_requires_manual_review(payment_client):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    state["debit"] = FakeResponse(409, {
+        "detail": {
+            "code": "TRANSACTION_ID_CONFLICT",
+            "message": "Transaction ID was already used for a different debit.",
+        }
+    })
+
+    response = confirm(client, headers)
+
+    assert response.status_code == 409
+    assert "manual review" in response.json()["detail"]
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert transaction.reconciliation_code == "TRANSACTION_ID_CONFLICT"
+    assert status_updates == ["RECONCILIATION_REQUIRED"]
+    assert calls["delete"] == []
+    assert calls["put"] == []
+
+    reconcile_response = client.post(
+        f"/api/v1/payments/{TRANSACTION_ID}/reconcile",
+        headers=headers,
+    )
+    assert reconcile_response.status_code == 409
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert calls["delete"] == []
+    assert calls["put"] == []
+
+
 def test_reconcile_debited_transaction_updates_tuition_and_completes(payment_client):
     client, transaction, state, calls, status_updates, headers = payment_client
     transaction.status = "RECONCILIATION_REQUIRED"
@@ -741,6 +796,10 @@ def test_reconcile_debited_transaction_updates_tuition_and_completes(payment_cli
     assert calls["put"]
     assert calls["delete"] == []
     assert status_updates == ["SUCCESS"]
+    status_get = next(call for call in calls["get"] if "/api/v1/internal/debits/" in call[0])
+    assert status_get[0].endswith(f"/api/v1/internal/debits/{TRANSACTION_ID}")
+    assert status_get[1]["headers"]["X-Internal-API-Key"] == INTERNAL_KEY
+    assert not any("/debit" in call[0] for call in calls["post"])
 
 
 def test_reconcile_not_found_keeps_reconciliation_and_claim(payment_client):
@@ -755,6 +814,35 @@ def test_reconcile_not_found_keeps_reconciliation_and_claim(payment_client):
     assert response.status_code == 200
     assert response.json()["status"] == "RECONCILIATION_REQUIRED"
     assert response.json()["debit_status"] == "NOT_FOUND"
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert calls["put"] == []
+    assert calls["delete"] == []
+    assert status_updates == []
+    status_get = next(call for call in calls["get"] if "/api/v1/internal/debits/" in call[0])
+    assert status_get[0].endswith(f"/api/v1/internal/debits/{TRANSACTION_ID}")
+    assert status_get[1]["headers"]["X-Internal-API-Key"] == INTERNAL_KEY
+    assert not any("/debit" in call[0] for call in calls["post"])
+
+
+@pytest.mark.parametrize(
+    "debit_status",
+    [
+        {"transaction_id": "different-id", "status": "DEBITED"},
+        {"transaction_id": TRANSACTION_ID, "status": "UNKNOWN"},
+        {"transaction_id": TRANSACTION_ID},
+    ],
+)
+def test_reconcile_rejects_invalid_user_debit_status(payment_client, debit_status):
+    client, transaction, state, calls, status_updates, headers = payment_client
+    transaction.status = "RECONCILIATION_REQUIRED"
+    state["debit_status"] = FakeResponse(200, debit_status)
+
+    response = client.post(
+        f"/api/v1/payments/{TRANSACTION_ID}/reconcile",
+        headers=headers,
+    )
+
+    assert response.status_code == 502
     assert transaction.status == "RECONCILIATION_REQUIRED"
     assert calls["put"] == []
     assert calls["delete"] == []

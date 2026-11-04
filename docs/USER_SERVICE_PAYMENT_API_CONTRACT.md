@@ -137,12 +137,11 @@ Payment should retain `RECONCILIATION_REQUIRED` for unknown outcomes. It should 
 
 ## Payment Service coordination
 
-Payment currently sends the same transaction ID in the debit request, but its debit response handling branches on HTTP status and does not parse `detail.code`. The Payment owner should:
+The Payment integration on `fix/payment-service-integration` parses `detail.code` and applies these policies:
 
-1. Parse `detail.code` for structured debit errors, not only the HTTP status.
-2. Handle `DEBIT_ROLLED_BACK` as a confirmed debit failure: do not call Tuition `/pay`, then coordinate a safe Payment failure and Tuition claim-release policy.
-3. Handle `DEBIT_OUTCOME_UNKNOWN`, timeout, malformed response, and unknown code conservatively: keep reconciliation required and retain the Tuition claim.
-4. Handle `TRANSACTION_ID_CONFLICT` as a distinct idempotency conflict. The debit ledger already has that ID; do not treat it like insufficient balance or assume there was no debit.
-5. Add Payment tests for these codes, claim handling, and the GET status contract. Do not treat a single `NOT_FOUND` while the original request could still be active as proof of rollback.
+1. `DEBIT_ROLLED_BACK` and known pre-debit business rejections fail the Payment transaction without calling Tuition `/pay`, then attempt to release the claim.
+2. `DEBIT_OUTCOME_UNKNOWN`, timeout, malformed response, and unknown codes keep `RECONCILIATION_REQUIRED` and retain the Tuition claim.
+3. `TRANSACTION_ID_CONFLICT` is handled separately: Payment records the conflict reason, keeps the reconciliation status and claim, and requires manual review. The debit status endpoint does not expose account/amount, so Payment does not automatically treat the conflicting ledger row as the debit for this tuition.
+4. Payment's `POST /api/v1/payments/{transaction_id}/reconcile` uses the GET status endpoint. `DEBITED` may resume tuition completion for non-conflict transactions; `NOT_FOUND` remains under reconciliation and does not trigger a retry or claim release.
 
-No Payment Service business logic is changed by the User Service implementation.
+The Payment database requires the nullable `reconciliation_code` column. For an existing database, apply `db/payment/payment_reconciliation_code.sql` before deploying the Payment code. The GET status endpoint remains point-in-time evidence: a single `NOT_FOUND` does not prove that an in-flight debit will not commit.

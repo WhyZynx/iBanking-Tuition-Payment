@@ -2,9 +2,11 @@
 
 ## Result
 
-**READY AFTER PAYMENT OWNER COORDINATION**
+**Payment integration implemented on `fix/payment-service-integration`; see the Payment owner implementation note below.**
 
-User Service now returns explicit error codes for confirmed rollback versus unknown debit outcome and exposes a read-only debit status endpoint. Payment Service does not currently inspect those codes or call the status endpoint, so the services are not fully behaviorally aligned yet. Payment business logic was not changed because it belongs to another owner.
+Sections 1–10 contain the User Service implementation report and its point-in-time findings. The Payment owner follow-up below supersedes the earlier statements that Payment had not yet integrated the contract.
+
+User Service returns explicit error codes for confirmed rollback versus unknown debit outcome and exposes a read-only debit status endpoint. Payment Service now consumes that contract. The status endpoint's `NOT_FOUND` race remains unresolved by the two-service API alone, so Payment does not fail or retry based on a single `NOT_FOUND`.
 
 ## 1. Initial issue
 
@@ -94,7 +96,7 @@ HTTP/1.1 503 Service Unavailable
 
 The new error body uses FastAPI's standard `detail` envelope, but `detail` changes from a string to an object for these two 503 cases. Payment currently ignores the error body; any other internal client must be checked before release.
 
-## 5. Payment owner changes required
+## 5. Payment owner implementation
 
 1. Parse `response.json()["detail"]["code"]` for User debit 503 responses.
 2. For `DEBIT_ROLLED_BACK`, do not call Tuition `/pay`; release the Tuition claim and follow the agreed safe Payment transaction policy. If the transaction is made terminal `FAILED`, the user can create a new Payment transaction after the claim is released. Ensure claim-release failure is observable and does not silently leave a claim held.
@@ -103,7 +105,11 @@ The new error body uses FastAPI's standard `detail` envelope, but `detail` chang
 5. Handle `TRANSACTION_ID_CONFLICT` separately from insufficient balance. The ID is already present in the debit ledger, so Payment must not mark the transaction failed and release the Tuition claim without reconciling the recorded debit.
 6. Use `GET /api/v1/internal/debits/{transaction_id}` only as a read-only observation. A `NOT_FOUND` response can race an in-flight debit and is not proof that the request will not commit. Do not retry POST automatically based on one `NOT_FOUND`.
 
-The Tuition owner should confirm that release by transaction ID is safe to call for a confirmed rollback and cannot release another payment's claim. No Tuition behavior is changed here.
+Payment now parses structured debit codes. Confirmed rollback marks the transaction failed and attempts to release the Tuition claim. Unknown outcomes keep `RECONCILIATION_REQUIRED` and retain the claim. A transaction ID conflict is recorded with a dedicated reconciliation code, keeps the claim, and is excluded from automatic reconciliation because User's status endpoint does not expose the account and amount needed to prove that the existing debit matches this tuition payment.
+
+Payment's authenticated `POST /api/v1/payments/{transaction_id}/reconcile` endpoint looks up debit status. `DEBITED` can resume tuition completion for non-conflict transactions; `NOT_FOUND` remains `RECONCILIATION_REQUIRED` and keeps the claim, without resending the debit. Conflicts require manual review.
+
+The Tuition owner should confirm that release by transaction ID is safe to call for a confirmed rollback and cannot release another payment's claim. No Tuition behavior was changed.
 
 ### Suggested message to Payment owner
 
@@ -198,3 +204,12 @@ curl.exe -H "X-Internal-API-Key: $env:INTERNAL_API_KEY" `
 ```
 
 Do not use the POST debit endpoint as a smoke test against demo data. MySQL concurrency/debit tests require an explicitly isolated test database and must not point at demo schemas.
+
+## 11. Payment owner follow-up
+
+- Parses `detail.code`: confirmed rollback fails the Payment transaction and releases the Tuition claim; unknown/malformed outcomes preserve reconciliation and the claim.
+- `TRANSACTION_ID_CONFLICT` is persisted as `reconciliation_code`, keeps the claim, and is excluded from automatic reconciliation because User's read endpoint does not expose amount/account for comparison. The UI instructs the payer not to retry and requires manual review.
+- Adds the authenticated Payment reconciliation endpoint. `DEBITED` can resume tuition completion without replaying the debit; `NOT_FOUND` preserves reconciliation and the claim because it is only a point-in-time observation.
+- Existing Payment databases require `db/payment/payment_reconciliation_code.sql` before deploying this branch. Fresh databases include the column in the init scripts.
+- Payment tests cover rollback, unknown outcome, ID conflict, claim handling, read-only status lookup, and the migration. MySQL-specific production behavior still requires validation against an approved isolated MySQL environment.
+- Safe Payment Service test run: **90 passed**; the two opt-in/demo database integration tests were excluded. Python/JavaScript syntax checks and `git diff --check` passed.

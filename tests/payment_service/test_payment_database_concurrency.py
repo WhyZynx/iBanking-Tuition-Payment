@@ -22,6 +22,7 @@ def create_database(tmp_path: Path):
                 payer_user_id INTEGER NOT NULL,
                 amount NUMERIC NULL,
                 status TEXT NOT NULL,
+                reconciliation_code TEXT NULL,
                 completed_at DATETIME NULL
             )
         """))
@@ -116,6 +117,36 @@ def test_reconciliation_claim_persists_the_debit_amount(tmp_path):
         ).one()
     assert transaction.status == "PROCESSING"
     assert float(transaction.amount) == 1250.75
+    engine.dispose()
+
+
+def test_transaction_id_conflict_cannot_be_auto_reconciled(tmp_path):
+    engine, session_factory = create_database(tmp_path)
+    with session_factory() as session:
+        session.execute(
+            text("""
+                UPDATE transactions
+                SET status='RECONCILIATION_REQUIRED',
+                    reconciliation_code='TRANSACTION_ID_CONFLICT'
+                WHERE transaction_id='race-tx'
+            """)
+        )
+        session.commit()
+
+        assert not TransactionModel.claim_reconciliation_for_processing(
+            session, "race-tx", 7
+        )
+
+    with session_factory() as session:
+        transaction = session.execute(
+            text("""
+                SELECT status, reconciliation_code
+                FROM transactions
+                WHERE transaction_id='race-tx'
+            """)
+        ).one()
+    assert transaction.status == "RECONCILIATION_REQUIRED"
+    assert transaction.reconciliation_code == "TRANSACTION_ID_CONFLICT"
     engine.dispose()
 
 

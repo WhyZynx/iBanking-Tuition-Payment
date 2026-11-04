@@ -14,6 +14,7 @@ Setup never renames, drops, imports into, or modifies an existing database or Do
 2. Confirm the MySQL server and the three source databases are the intended targets. Never run these commands against a shared or production server without its approved change process.
 3. Make a tested, access-controlled backup of all three databases. Store it outside the repository and do not paste credentials into shell history or commit the backup.
 4. Review schema differences and the forward-only SQL under `db/user`, `db/tuition`, and `db/payment`. Init scripts and demo seed scripts are not migrations for populated databases.
+5. Before deploying the Payment Service reconciliation-code changes, apply [`payment_reconciliation_code.sql`](../db/payment/payment_reconciliation_code.sql) to the intended `ibanking_payment_db`. This adds nullable reconciliation metadata and does not rewrite existing transaction rows.
 
 ## Migration approach
 

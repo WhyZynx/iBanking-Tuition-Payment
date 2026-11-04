@@ -106,7 +106,8 @@ class TransactionModel:
     def update_status(db_session, transaction_id, status):
         query = text(
             "UPDATE transactions "
-            "SET status = :status, completed_at = CURRENT_TIMESTAMP "
+            "SET status = :status, completed_at = CURRENT_TIMESTAMP, "
+            "reconciliation_code = NULL "
             "WHERE transaction_id = :id AND status = 'PROCESSING'"
         )
         result = db_session.execute(
@@ -136,16 +137,17 @@ class TransactionModel:
         return result.rowcount == 1
 
     @staticmethod
-    def mark_reconciliation_required(db_session, transaction_id):
+    def mark_reconciliation_required(db_session, transaction_id, reason_code=None):
         result = db_session.execute(
             text("""
                 UPDATE transactions
                 SET status = 'RECONCILIATION_REQUIRED',
-                    completed_at = NULL
+                    completed_at = NULL,
+                    reconciliation_code = :reason_code
                 WHERE transaction_id = :id
                   AND status = 'PROCESSING'
             """),
-            {"id": transaction_id},
+            {"id": transaction_id, "reason_code": reason_code},
         )
         db_session.commit()
         return result.rowcount == 1
@@ -160,6 +162,7 @@ class TransactionModel:
                 WHERE transaction_id = :id
                   AND payer_user_id = :user_id
                   AND status = 'RECONCILIATION_REQUIRED'
+                  AND reconciliation_code IS NULL
             """),
             {
                 "id": transaction_id,
@@ -257,7 +260,8 @@ class TransactionModel:
             UPDATE transactions
             SET amount = :amount,
                 status = 'SUCCESS',
-                completed_at = :completed_at
+                completed_at = :completed_at,
+                reconciliation_code = NULL
             WHERE transaction_id = :id
               AND status = 'PROCESSING'
         """)

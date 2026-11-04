@@ -19,6 +19,7 @@ def payment_schema(tmp_path):
                 student_name VARCHAR(255),
                 amount DECIMAL(15, 2),
                 status VARCHAR(32) NOT NULL,
+                reconciliation_code VARCHAR(64) NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP NULL
             )
@@ -56,6 +57,7 @@ def test_payment_schema_has_required_transaction_and_otp_constraints(payment_sch
     ):
         assert transaction_columns[name]["nullable"] is False
     assert transaction_columns["amount"]["nullable"] is True
+    assert transaction_columns["reconciliation_code"]["nullable"] is True
     assert transaction_columns["completed_at"]["nullable"] is True
 
     for name in ("transaction_id", "otp_code", "expires_at", "is_used"):
@@ -119,3 +121,12 @@ def test_sql_migration_is_guarded_and_has_no_data_rewrite():
     assert "ON DELETE CASCADE" not in migration.upper()
     assert "UPDATE transactions" not in migration.upper()
     assert "UPDATE otps" not in migration.upper()
+
+
+def test_reconciliation_code_migration_only_adds_nullable_column():
+    migration = Path("db/payment/payment_reconciliation_code.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "ADD COLUMN reconciliation_code VARCHAR(64) NULL" in migration
+    assert "DROP" not in migration.upper()
+    assert "UPDATE transactions" not in migration.upper()

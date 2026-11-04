@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS transactions (
     student_name VARCHAR(255) NULL,
     amount DECIMAL(15, 2),
     status VARCHAR(32) NOT NULL,
+    reconciliation_code VARCHAR(64) NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP NULL
 );

@@ -117,12 +117,26 @@ def get_payment_status(
         "source_account_number": transaction.source_account_number,
         "amount": transaction.amount,
         "status": transaction.status,
+        "reconciliation_code": getattr(transaction, "reconciliation_code", None),
         "completed_at": (
             serialize_utc_datetime(transaction.completed_at)
             if transaction.completed_at and transaction.status in ("SUCCESS", "FAILED")
             else None
         ),
     }
+
+
+@router.post("/api/v1/payments/{transaction_id}/reconcile")
+def reconcile_payment(
+    transaction_id: str,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    return payment_service.reconcile_payment(
+        db_session=db_session,
+        transaction_id=transaction_id,
+        payer_user_id=current_user_id,
+    )
 
 
 @router.post("/api/v1/payments/{transaction_id}/otp")

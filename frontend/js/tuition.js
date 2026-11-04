@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	const otpDeliveryMessage = document.getElementById('otp-delivery-message');
 	const resendOtpButton = document.getElementById('resend-otp');
 	const confirmOtpButton = document.getElementById('confirm-otp');
+	const reconcilePaymentButton = document.getElementById('reconcile-payment');
 	const paymentSuccess = document.getElementById('payment-success');
 	const studentMappingNote = document.getElementById('student-mapping-note');
 
@@ -46,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 	createPaymentButton.addEventListener('click', createPayment);
 	resendOtpButton.addEventListener('click', requestOtp);
 	otpForm.addEventListener('submit', confirmPayment);
+	reconcilePaymentButton.addEventListener('click', reconcilePayment);
 
 	await loadPayerAndAccounts();
 	if (pendingPayment) await restorePendingPayment();
@@ -317,6 +319,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 		}
 		confirmOtpButton.disabled = true;
 		otpError.textContent = '';
+		let reconciliationRequired = false;
+		let preventRetry = false;
 		try {
 			const result = await window.IBanking.paymentRequest('/api/v1/payments/confirm', {
 				method: 'POST',
@@ -337,8 +341,62 @@ document.addEventListener('DOMContentLoaded', async () => {
 			}
 			otpError.textContent = error.message;
 			otpInput.select();
+			if (error.status >= 400) {
+				let latestStatus = null;
+				try {
+					latestStatus = await getPendingPaymentStatus();
+					reconciliationRequired = latestStatus.status === 'RECONCILIATION_REQUIRED';
+					if (latestStatus.status === 'FAILED') {
+						const studentId = pendingPayment.studentId;
+						otpSection.classList.add('hidden');
+						clearPendingPayment();
+						unlockPaymentForm();
+						actionMessage.textContent = 'The debit was rolled back. Search for the tuition again to start a new payment.';
+						await lookupTuition(studentId);
+						return;
+					}
+				} catch (_statusError) {
+					preventRetry = error.status >= 500;
+				}
+				if (reconciliationRequired) {
+					otpInput.disabled = true;
+					resendOtpButton.disabled = true;
+					if (latestStatus.reconciliation_code === 'TRANSACTION_ID_CONFLICT') {
+						otpError.textContent = 'The debit ID conflicts with an existing debit. Payment needs manual review; do not retry.';
+					} else {
+						reconcilePaymentButton.classList.remove('hidden');
+						otpError.textContent = 'Payment outcome is being checked. Do not submit another payment for this tuition.';
+					}
+				} else if (preventRetry) {
+					otpInput.disabled = true;
+					resendOtpButton.disabled = true;
+					otpError.textContent = 'Could not verify the payment status. Do not retry until it has been checked.';
+				}
+			}
 		} finally {
-			confirmOtpButton.disabled = false;
+			confirmOtpButton.disabled = reconciliationRequired || preventRetry;
+		}
+	}
+
+	async function reconcilePayment() {
+		if (!pendingPayment) return;
+		reconcilePaymentButton.disabled = true;
+		otpError.textContent = '';
+		try {
+			const result = await window.IBanking.paymentRequest(
+				`/api/v1/payments/${encodeURIComponent(pendingPayment.transactionId)}/reconcile`,
+				{ method: 'POST' }
+			);
+			if (result.status === 'SUCCESS') {
+				renderSuccess(result);
+				clearPendingPayment();
+			} else {
+				otpError.textContent = 'The debit is not confirmed yet. The payment claim remains held; check again later.';
+			}
+		} catch (error) {
+			otpError.textContent = error.message || 'Could not reconcile the payment. Check again later.';
+		} finally {
+			reconcilePaymentButton.disabled = false;
 		}
 	}
 
@@ -370,7 +428,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 			} else if (result.status === 'PROCESSING') {
 				otpDeliveryMessage.textContent = 'Payment is still processing. Keep this page open or refresh to check again.';
 			} else if (result.status === 'RECONCILIATION_REQUIRED') {
-				otpError.textContent = 'Payment needs manual review. Do not submit another payment for this tuition.';
+				if (result.reconciliation_code === 'TRANSACTION_ID_CONFLICT') {
+					otpError.textContent = 'The debit ID conflicts with an existing debit. Payment needs manual review; do not retry.';
+				} else {
+					otpError.textContent = 'Payment outcome is being checked. Do not submit another payment for this tuition.';
+					reconcilePaymentButton.classList.remove('hidden');
+				}
 			} else if (result.status === 'FAILED') {
 				const studentId = pendingPayment.studentId;
 				otpError.textContent = 'Payment failed. Check transaction history before trying again.';

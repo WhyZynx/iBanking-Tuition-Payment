@@ -19,6 +19,7 @@ def payment_schema(tmp_path):
                 student_name VARCHAR(255),
                 amount DECIMAL(15, 2),
                 status VARCHAR(32) NOT NULL,
+                reconciliation_code VARCHAR(64) NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP NULL
             )
@@ -56,6 +57,7 @@ def test_payment_schema_has_required_transaction_and_otp_constraints(payment_sch
     ):
         assert transaction_columns[name]["nullable"] is False
     assert transaction_columns["amount"]["nullable"] is True
+    assert transaction_columns["reconciliation_code"]["nullable"] is True
     assert transaction_columns["completed_at"]["nullable"] is True
 
     for name in ("transaction_id", "otp_code", "expires_at", "is_used"):
@@ -112,10 +114,50 @@ def test_pending_transaction_can_keep_null_amount(payment_schema):
     assert amount is None
 
 
-def test_sql_migration_is_guarded_and_has_no_data_rewrite():
-    migration = Path("db/payment/payment_integrity_hardening.sql").read_text(encoding="utf-8")
-    assert "SIGNAL SQLSTATE '45000'" in migration
-    assert "LEFT JOIN transactions" in migration
-    assert "ON DELETE CASCADE" not in migration.upper()
-    assert "UPDATE transactions" not in migration.upper()
-    assert "UPDATE otps" not in migration.upper()
+def test_canonical_payment_schema_upgrades_legacy_tables_safely():
+    schema = Path("db/payment/payment_init.sql").read_text(
+        encoding="utf-8"
+    )
+    assert "ADD COLUMN reconciliation_code VARCHAR(64) NULL" in schema
+    assert "ADD COLUMN student_name VARCHAR(255) NULL" in schema
+    assert "SIGNAL SQLSTATE '45000'" in schema
+    assert "LEFT JOIN transactions" in schema
+    assert "ADD CONSTRAINT fk_otps_transaction" in schema
+    assert "ON DELETE CASCADE" not in schema.upper()
+    assert "UPDATE transactions" not in schema.upper()
+    assert "UPDATE otps" not in schema.upper()
+
+
+def test_docker_uses_the_canonical_payment_schema():
+    compose = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert "./db/payment/payment_init.sql:/docker-entrypoint-initdb.d/04-payment-init.sql:ro" in compose
+
+
+def test_student_id_migration_is_safe_to_resume_after_partial_ddl():
+    migration = Path("db/user/add_user_student_id.sql").read_text(encoding="utf-8")
+    assert "information_schema.columns" in migration
+    assert "IF has_student_id = 0 THEN" in migration
+    assert "information_schema.statistics" in migration
+    assert "IF has_student_id_unique_index = 0 THEN" in migration
+    assert "CALL upgrade_user_student_id();" in migration
+
+
+def test_setup_runners_verify_schema_before_recording_migrations():
+    powershell = Path("setup-db.ps1").read_text(encoding="utf-8")
+    shell = Path("setup-db.sh").read_text(encoding="utf-8")
+
+    assert powershell.index(
+        "$schemaValid = Test-MigrationSchema $migration.Version"
+    ) < powershell.index(
+        'Invoke-MySql "INSERT INTO $($migration.Database).schema_migrations'
+    )
+    assert shell.index(
+        'if migration_is_valid "$version"; then'
+    ) < shell.index(
+        'mysql_query "INSERT INTO ${database}.schema_migrations'
+    )
+    for runner in (powershell, shell):
+        assert "information_schema.statistics" in runner
+        assert "information_schema.key_column_usage" in runner
+        assert "information_schema.check_constraints" in runner
+        assert "schema was verified" in runner.lower()

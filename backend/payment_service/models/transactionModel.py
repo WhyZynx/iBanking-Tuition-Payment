@@ -1,19 +1,23 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 
 from sqlalchemy import text
+
+from backend.payment_service.time_utils import now_vn, VN_TZ
 
 
 PROCESSING_TIMEOUT = timedelta(seconds=90)
 
 
-def serialize_utc_datetime(value):
+def serialize_vn_datetime(value):
     if value is None:
         return None
+
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
+        value = value.replace(tzinfo=VN_TZ)
     else:
-        value = value.astimezone(timezone.utc)
-    return value.isoformat().replace("+00:00", "Z")
+        value = value.astimezone(VN_TZ)
+
+    return value.isoformat()
 
 
 class TransactionModel:
@@ -106,7 +110,8 @@ class TransactionModel:
     def update_status(db_session, transaction_id, status):
         query = text(
             "UPDATE transactions "
-            "SET status = :status, completed_at = CURRENT_TIMESTAMP "
+            "SET status = :status, completed_at = CURRENT_TIMESTAMP, "
+            "reconciliation_code = NULL "
             "WHERE transaction_id = :id AND status = 'PROCESSING'"
         )
         result = db_session.execute(
@@ -136,16 +141,54 @@ class TransactionModel:
         return result.rowcount == 1
 
     @staticmethod
-    def mark_reconciliation_required(db_session, transaction_id):
+    def mark_reconciliation_required(db_session, transaction_id, reason_code=None):
         result = db_session.execute(
             text("""
                 UPDATE transactions
                 SET status = 'RECONCILIATION_REQUIRED',
-                    completed_at = NULL
+                    completed_at = NULL,
+                    reconciliation_code = :reason_code
                 WHERE transaction_id = :id
                   AND status = 'PROCESSING'
             """),
-            {"id": transaction_id},
+            {"id": transaction_id, "reason_code": reason_code},
+        )
+        db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
+    def claim_reconciliation_for_processing(db_session, transaction_id, payer_user_id):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET status = 'PROCESSING',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE transaction_id = :id
+                  AND payer_user_id = :user_id
+                  AND status = 'RECONCILIATION_REQUIRED'
+                  AND reconciliation_code IS NULL
+            """),
+            {
+                "id": transaction_id,
+                "user_id": payer_user_id,
+            },
+        )
+        db_session.commit()
+        return result.rowcount == 1
+
+    @staticmethod
+    def update_processing_amount(db_session, transaction_id, amount):
+        result = db_session.execute(
+            text("""
+                UPDATE transactions
+                SET amount = :amount
+                WHERE transaction_id = :id
+                  AND status = 'PROCESSING'
+            """),
+            {
+                "amount": amount,
+                "id": transaction_id,
+            },
         )
         db_session.commit()
         return result.rowcount == 1
@@ -159,7 +202,7 @@ class TransactionModel:
         if transaction_id is None and payer_user_id is None:
             return 0
 
-        cutoff = (datetime.now(timezone.utc) - PROCESSING_TIMEOUT).replace(tzinfo=None)
+        cutoff = now_vn() - PROCESSING_TIMEOUT
         result = db_session.execute(
             text("""
                 UPDATE transactions
@@ -216,12 +259,13 @@ class TransactionModel:
 
     @staticmethod
     def complete(db_session, transaction_id, amount):
-        completed_at = datetime.now(timezone.utc)
+        completed_at = now_vn()
         query = text("""
             UPDATE transactions
             SET amount = :amount,
                 status = 'SUCCESS',
-                completed_at = :completed_at
+                completed_at = :completed_at,
+                reconciliation_code = NULL
             WHERE transaction_id = :id
               AND status = 'PROCESSING'
         """)
@@ -285,9 +329,9 @@ class TransactionModel:
                 "sourceAccountNumber": row[3],
                 "amount": row[4],
                 "status": row[5],
-                "createdAt": serialize_utc_datetime(row[6]),
+                "createdAt": serialize_vn_datetime(row[6]),
                 "completedAt": (
-                    serialize_utc_datetime(row[7])
+                    serialize_vn_datetime(row[7])
                     if row[7] and row[5] in ("SUCCESS", "FAILED")
                     else None
                 ),

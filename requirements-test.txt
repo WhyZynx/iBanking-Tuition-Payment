@@ -1,0 +1,3 @@
+-r backend/user_service/requirements.txt
+-r backend/tuition_service/requirements.txt
+-r backend/payment_service/requirements.txt

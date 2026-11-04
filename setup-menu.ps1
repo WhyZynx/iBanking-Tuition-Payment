@@ -174,12 +174,97 @@ function Show-DemoData {
     [void](Read-Host 'Press Enter to return to the menu')
 }
 
+
+function Invoke-ConcurrencyTest([string]$testPath) {
+    Write-Host ''
+    Write-Host 'WARNING: This test may modify the demo database.' -ForegroundColor Yellow
+    Write-Host 'It can create real transactions and mark tuition as PAID.' -ForegroundColor Yellow
+
+    $approval = Read-Host 'Continue? (Y/N)'
+    if ($approval.Trim().ToUpper() -ne 'Y') {
+        Write-Host 'Test cancelled.' -ForegroundColor Yellow
+        return
+    }
+
+    $pythonPath = Join-Path $PSScriptRoot '.venv-ibanking-tests\Scripts\python.exe'
+
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        $pythonPath = 'python'
+    }
+
+    $previousApproval = $env:IBANKING_DEMO_CONCURRENCY_APPROVAL
+
+    try {
+        $env:IBANKING_DEMO_CONCURRENCY_APPROVAL = 'YES'
+
+        Write-Host ''
+        Write-Host "Running: $testPath" -ForegroundColor Cyan
+        Write-Host '----------------------------------------'
+
+        & $pythonPath -m pytest $testPath -m demo_live -v -s
+
+        $exitCode = $LASTEXITCODE
+
+        Write-Host ''
+        if ($exitCode -eq 0) {
+            Write-Host 'Test completed successfully.' -ForegroundColor Green
+        }
+        else {
+            Write-Host "Test finished with exit code $exitCode." -ForegroundColor Red
+        }
+    }
+    finally {
+        $env:IBANKING_DEMO_CONCURRENCY_APPROVAL = $previousApproval
+    }
+
+    [void](Read-Host 'Press Enter to return to the menu')
+}
+
+function Show-ConcurrencyMenu {
+    while ($true) {
+        Write-Host ''
+        Write-Host '========================================'
+        Write-Host ' Concurrency Testing'
+        Write-Host '========================================'
+        Write-Host '[1] Same Account - Two Students'
+        Write-Host '[2] Two Payer - Same Student'
+        Write-Host '[3] Run Both Tests'
+        Write-Host '[0] Back to Main Menu'
+
+        $choice = Read-Host 'Choose an option'
+
+        switch ($choice.Trim()) {
+            '1' {
+                Invoke-ConcurrencyTest `
+                    'tests/payment_service/test_payment_concurrency_same_account.py'
+            }
+            '2' {
+                Invoke-ConcurrencyTest `
+                    'tests/payment_service/test_demo_two_payer_concurrency.py'
+            }
+            '3' {
+                Invoke-ConcurrencyTest `
+                    'tests/payment_service/test_payment_concurrency_same_account.py'
+
+                Invoke-ConcurrencyTest `
+                    'tests/payment_service/test_demo_two_payer_concurrency.py'
+            }
+            '0' { return }
+            default {
+                Write-Host 'Please enter 1, 2, 3, or 0.' -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
+
 while ($true) {
     Write-Host ''
     Write-Host '[1] View current demo data'
     Write-Host '[2] Open iBanking frontend'
     Write-Host '[3] Open Mailpit inbox'
     Write-Host '[4] Configure email delivery'
+    Write-Host '[5] Run concurrency tests'
     Write-Host '[0] Exit setup (keep services running)'
     $choice = Read-Host 'Choose an option'
     switch ($choice.Trim()) {
@@ -187,7 +272,8 @@ while ($true) {
         '2' { Start-Process (Get-LocalUrl 'FRONTEND_PORT' '8080') }
         '3' { Start-Process (Get-LocalUrl 'MAILPIT_WEB_PORT' '8025') }
         '4' { Show-EmailMenu }
+        '5' { Show-ConcurrencyMenu }
         '0' { exit 0 }
-        default { Write-Host 'Please enter 1, 2, 3, 4, or 0.' -ForegroundColor Yellow }
+        default { Write-Host 'Please enter 1, 2, 3, 4, 5, or 0.' -ForegroundColor Yellow }
     }
 }

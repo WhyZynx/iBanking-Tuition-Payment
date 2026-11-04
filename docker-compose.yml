@@ -6,7 +6,12 @@ services:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./db/docker-init:/docker-entrypoint-initdb.d:ro
+      - ./db/docker-init/01-user-init.sql:/docker-entrypoint-initdb.d/01-user-init.sql:ro
+      - ./db/docker-init/02-tuition-init.sql:/docker-entrypoint-initdb.d/02-tuition-init.sql:ro
+      - ./db/docker-init/03-tuition-claims.sql:/docker-entrypoint-initdb.d/03-tuition-claims.sql:ro
+      - ./db/payment/payment_init.sql:/docker-entrypoint-initdb.d/04-payment-init.sql:ro
+      - ./db/docker-init/05-user-demo-seed.sql:/docker-entrypoint-initdb.d/05-user-demo-seed.sql:ro
+      - ./db/docker-init/06-tuition-demo-seed.sql:/docker-entrypoint-initdb.d/06-tuition-demo-seed.sql:ro
     healthcheck:
       test: [ "CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent" ]
       interval: 5s
@@ -46,6 +51,9 @@ services:
     environment:
       DATABASE_URL: "mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/ibanking_tuition_db"
       INTERNAL_API_KEY: ${INTERNAL_API_KEY:?Set INTERNAL_API_KEY in .env.docker}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env.docker}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      TUITION_CLAIM_TTL_SECONDS: ${TUITION_CLAIM_TTL_SECONDS:-300}
     depends_on:
       mysql:
         condition: service_healthy

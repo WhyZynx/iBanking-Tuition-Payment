@@ -4,7 +4,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from backend.user_service.controllers.account_controller import internal_router as internal_account_router
+from backend.user_service.controllers.account_controller import (
+    internal_debit_router,
+    internal_router as internal_account_router,
+)
 from backend.user_service.controllers.account_controller import router as account_router
 from backend.user_service.controllers.auth_controller import router as auth_router
 from backend.user_service.controllers.user_controller import router as user_router
@@ -35,6 +38,7 @@ app.include_router(auth_router)
 app.include_router(user_router)
 app.include_router(account_router)
 app.include_router(internal_account_router)
+app.include_router(internal_debit_router)
 
 
 @app.get("/health", tags=["Health"], summary="Check service health")

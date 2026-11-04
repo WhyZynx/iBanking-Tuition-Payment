@@ -10,7 +10,7 @@ from backend.payment_service.config import JWT_ALGORITHM, JWT_SECRET_KEY
 from backend.payment_service.database import get_db
 from backend.payment_service.models.transactionModel import (
     TransactionModel,
-    serialize_utc_datetime,
+    serialize_vn_datetime,
 )
 from backend.payment_service.services.paymentService import PaymentService
 
@@ -117,12 +117,26 @@ def get_payment_status(
         "source_account_number": transaction.source_account_number,
         "amount": transaction.amount,
         "status": transaction.status,
+        "reconciliation_code": getattr(transaction, "reconciliation_code", None),
         "completed_at": (
-            serialize_utc_datetime(transaction.completed_at)
+            serialize_vn_datetime(transaction.completed_at)
             if transaction.completed_at and transaction.status in ("SUCCESS", "FAILED")
             else None
         ),
     }
+
+
+@router.post("/api/v1/payments/{transaction_id}/reconcile")
+def reconcile_payment(
+    transaction_id: str,
+    current_user_id: int = Depends(get_current_user_id),
+    db_session: Session = Depends(get_db),
+):
+    return payment_service.reconcile_payment(
+        db_session=db_session,
+        transaction_id=transaction_id,
+        payer_user_id=current_user_id,
+    )
 
 
 @router.post("/api/v1/payments/{transaction_id}/otp")
@@ -195,7 +209,7 @@ def get_transaction_history(
             transaction = TransactionModel.find_by_id(db_session, item["transactionId"])
             item["status"] = transaction.status
             item["completedAt"] = (
-                serialize_utc_datetime(transaction.completed_at)
+                serialize_vn_datetime(transaction.completed_at)
                 if transaction.completed_at
                 else None
             )

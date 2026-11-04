@@ -10,6 +10,7 @@ Desktop.ini
 !.env.docker.example
 .venv/
 venv/
+.venv-ibanking-tests
 env/
 ENV/
 .idea/

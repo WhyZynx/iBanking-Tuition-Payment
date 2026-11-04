@@ -14,6 +14,15 @@ Setup never renames, drops, imports into, or modifies an existing database or Do
 2. Confirm the MySQL server and the three source databases are the intended targets. Never run these commands against a shared or production server without its approved change process.
 3. Make a tested, access-controlled backup of all three databases. Store it outside the repository and do not paste credentials into shell history or commit the backup.
 4. Review schema differences and the forward-only SQL under `db/user`, `db/tuition`, and `db/payment`. Init scripts and demo seed scripts are not migrations for populated databases.
+5. Before deploying Payment Service changes to an existing Payment database, back it up and run the canonical, guarded schema script [`payment_init.sql`](../db/payment/payment_init.sql) against the intended `ibanking_payment_db`. It creates missing tables, adds missing nullable Payment fields, and checks existing required values before applying constraints. Inspect and resolve any preflight error instead of bypassing it. Fresh Docker databases use this same file.
+
+The Compose setup runners verify migration structure before recording a version in each database's `schema_migrations` table. They check the relevant columns, keys, indexes, foreign keys, and checks. The PowerShell runner's `-ValidateOnly` mode is read-only and can be used to inspect an existing Compose database before a reset; it does not create migration tables or apply SQL:
+
+```powershell
+powershell.exe -NoProfile -File .\setup-db.ps1 -ComposeProject ibanking-demo -ValidateOnly
+```
+
+Normal setup mode applies migrations and seed scripts and is not a read-only inspection. Do not use it to bypass a failed validation or without the required backup and approval.
 
 ## Migration approach
 

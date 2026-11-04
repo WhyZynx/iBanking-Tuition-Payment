@@ -177,6 +177,16 @@ function Show-DemoData {
 
 function Invoke-ConcurrencyTest([string]$testPath) {
     Write-Host ''
+
+    $pythonPath = Join-Path $PSScriptRoot '.venv-ibanking-tests\Scripts\python.exe'
+
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        Write-Host 'Test environment is not prepared.' -ForegroundColor Yellow
+        Write-Host 'Please choose [1] Prepare test environment first.'
+        [void](Read-Host 'Press Enter to return to the menu')
+        return
+    }
+
     Write-Host 'WARNING: This test may modify the demo database.' -ForegroundColor Yellow
     Write-Host 'It can create real transactions and mark tuition as PAID.' -ForegroundColor Yellow
 
@@ -184,12 +194,6 @@ function Invoke-ConcurrencyTest([string]$testPath) {
     if ($approval.Trim().ToUpper() -ne 'Y') {
         Write-Host 'Test cancelled.' -ForegroundColor Yellow
         return
-    }
-
-    $pythonPath = Join-Path $PSScriptRoot '.venv-ibanking-tests\Scripts\python.exe'
-
-    if (-not (Test-Path -LiteralPath $pythonPath)) {
-        $pythonPath = 'python'
     }
 
     $previousApproval = $env:IBANKING_DEMO_CONCURRENCY_APPROVAL
@@ -202,10 +206,10 @@ function Invoke-ConcurrencyTest([string]$testPath) {
         Write-Host '----------------------------------------'
 
         & $pythonPath -m pytest $testPath -m demo_live -v -s
-
         $exitCode = $LASTEXITCODE
 
         Write-Host ''
+
         if ($exitCode -eq 0) {
             Write-Host 'Test completed successfully.' -ForegroundColor Green
         }
@@ -220,6 +224,85 @@ function Invoke-ConcurrencyTest([string]$testPath) {
     [void](Read-Host 'Press Enter to return to the menu')
 }
 
+function Invoke-AutomatedTests {
+    $testScript = Join-Path $PSScriptRoot 'setup-tests.ps1'
+
+    if (-not (Test-Path -LiteralPath $testScript)) {
+        Write-Host 'setup-tests.ps1 is missing.' -ForegroundColor Yellow
+        [void](Read-Host 'Press Enter to return to the menu')
+        return
+    }
+
+    $pythonPath = Join-Path $PSScriptRoot '.venv-ibanking-tests\Scripts\python.exe'
+
+    if (-not (Test-Path -LiteralPath $pythonPath)) {
+        Write-Host 'Test environment is not prepared.' -ForegroundColor Yellow
+        Write-Host 'Please choose [1] Prepare test environment first.'
+        [void](Read-Host 'Press Enter to return to the menu')
+        return
+    }
+
+    Write-Host ''
+    Write-Host 'Running automated tests...' -ForegroundColor Cyan
+    Write-Host '----------------------------------------'
+
+    try {
+        & $testScript -Mode Run
+        Write-Host 'Automated tests completed successfully.' -ForegroundColor Green
+    }
+    catch {
+        Write-Host "Automated tests failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    [void](Read-Host 'Press Enter to return to the menu')
+}
+
+function Show-TestsMenu {
+    $testScript = Join-Path $PSScriptRoot 'setup-tests.ps1'
+
+    while ($true) {
+        Write-Host ''
+        Write-Host '========================================'
+        Write-Host ' Tests'
+        Write-Host '========================================'
+        Write-Host '[1] Prepare test environment'
+        Write-Host '[2] Run automated tests'
+        Write-Host '[3] Run concurrency tests'
+        Write-Host '[0] Back to Main Menu'
+
+        $choice = Read-Host 'Choose an option'
+
+        switch ($choice.Trim()) {
+            '1' {
+                if (Test-Path -LiteralPath $testScript) {
+                    & $testScript -Mode Prepare
+                    [void](Read-Host 'Press Enter to return to the menu')
+                }
+                else {
+                    Write-Host 'setup-tests.ps1 is missing.' -ForegroundColor Yellow
+                    [void](Read-Host 'Press Enter to return to the menu')
+                }
+            }
+
+            '2' {
+                Invoke-AutomatedTests
+            }
+
+            '3' {
+                Show-ConcurrencyMenu
+            }
+
+            '0' {
+                return
+            }
+
+            default {
+                Write-Host 'Please enter 1, 2, 3, or 0.' -ForegroundColor Yellow
+            }
+        }
+    }
+}
+
 function Show-ConcurrencyMenu {
     while ($true) {
         Write-Host ''
@@ -229,7 +312,7 @@ function Show-ConcurrencyMenu {
         Write-Host '[1] Same Account - Two Students'
         Write-Host '[2] Two Payer - Same Student'
         Write-Host '[3] Run Both Tests'
-        Write-Host '[0] Back to Main Menu'
+        Write-Host '[0] Back to Tests Menu'
 
         $choice = Read-Host 'Choose an option'
 
@@ -260,20 +343,27 @@ function Show-ConcurrencyMenu {
 
 while ($true) {
     Write-Host ''
+    Write-Host '========================================'
+    Write-Host ' iBanking Setup Menu'
+    Write-Host '========================================'
     Write-Host '[1] View current demo data'
     Write-Host '[2] Open iBanking frontend'
     Write-Host '[3] Open Mailpit inbox'
     Write-Host '[4] Configure email delivery'
-    Write-Host '[5] Run concurrency tests'
+    Write-Host '[5] Tests'
     Write-Host '[0] Exit setup (keep services running)'
+
     $choice = Read-Host 'Choose an option'
+
     switch ($choice.Trim()) {
         '1' { Show-DemoData }
         '2' { Start-Process (Get-LocalUrl 'FRONTEND_PORT' '8080') }
         '3' { Start-Process (Get-LocalUrl 'MAILPIT_WEB_PORT' '8025') }
         '4' { Show-EmailMenu }
-        '5' { Show-ConcurrencyMenu }
+        '5' { Show-TestsMenu }
         '0' { exit 0 }
-        default { Write-Host 'Please enter 1, 2, 3, 4, 5, or 0.' -ForegroundColor Yellow }
+        default {
+            Write-Host 'Please enter 1, 2, 3, 4, 5, or 0.' -ForegroundColor Yellow
+        }
     }
 }

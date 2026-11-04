@@ -19,7 +19,6 @@ from backend.payment_service.main import app
 from backend.payment_service.models import otpModel, transactionModel
 from backend.payment_service.services import paymentService
 
-
 USER_ID = 42
 TRANSACTION_ID = "8b7c0d5e-0000-4000-8000-000000000001"
 STUDENT_ID = "SV001"
@@ -290,7 +289,12 @@ def test_successful_payment_revalidates_and_finalizes_transaction(payment_client
     assert body["student_id"] == STUDENT_ID
     assert body["student_name"] == "Nguyen Van B"
     assert Decimal(str(body["amount"])) == Decimal("5000000.25")
-    assert body["completed_at"].endswith("Z")
+    completed_at = datetime.fromisoformat(
+        body["completed_at"]
+    )
+
+    assert completed_at.tzinfo is not None
+    assert completed_at.utcoffset() == timedelta(hours=7)
     assert transaction.status == "SUCCESS"
     assert transaction.amount == Decimal("5000000.25")
     assert transaction.completed_at is not None

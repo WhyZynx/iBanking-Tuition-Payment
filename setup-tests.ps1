@@ -46,11 +46,11 @@ if ($Mode -eq 'Prepare') {
     & $venvPython -m pip install --disable-pip-version-check -r (Join-Path $root 'requirements-test.txt')
     if ($LASTEXITCODE -ne 0) { throw 'Could not install test dependencies into .venv-ibanking-tests.' }
     Write-Host "Prepared isolated pytest environment: $venvVersion"
-    exit 0
+    return
 }
 
 if (-not (Test-Path -LiteralPath $venvPython)) {
-    throw 'The test virtual environment is not prepared. Run setup.bat or setup-tests.ps1 -Mode Prepare first.'
+    throw 'The test environment is not prepared. Open the Setup Menu and choose Tests > Prepare test environment.'
 }
 & $venvPython -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw 'Default safe pytest suite failed; see the report above.' }

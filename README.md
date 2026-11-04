@@ -398,36 +398,47 @@ Finally, return to Mailpit mode using menu option `4`, then option `1`.
 
 ## 10. Automated Tests
 
-Run tests from the project root with the Python test environment activated.
+The project uses an isolated Python virtual environment for testing.
 
-### Run the Full Test Suite
+### Prepare the Test Environment
 
-```bash
-python -m pytest tests -q
-```
+From the Setup Menu:
 
-Some MySQL integration tests require an isolated test database.
+1. Choose `[5] Tests`.
+2. Choose `[1] Prepare test environment`.
+3. Wait until the required dependencies are installed.
 
-The two concurrency tests below use the actual local demo stack and modify demo data.
+The environment is created in `.venv-ibanking-tests`.
 
-### 10.1 Same Account - Two Students
+### Run Automated Tests
+
+1. Choose `[5] Tests`.
+2. Choose `[2] Run automated tests`.
+
+The menu runs the default pytest suite using the prepared environment.
+
+### Run Concurrency Tests
+
+1. Choose `[5] Tests`.
+2. Choose `[3] Run concurrency tests`.
+3. Select the test scenario.
+4. Confirm the warning before execution.
+
+The concurrency tests use the local demo database and may modify existing demo data.
+
+**Important:** Prepare the test environment before running automated or concurrency tests. Manual Python environment activation is not required.
+
+### Concurrency Test Scenarios
+
+**1. Same Account - Two Students**
 
 Test file:
 
-```text
-tests/payment_service/test_payment_concurrency_same_account.py
-```
+`tests/payment_service/test_payment_concurrency_same_account.py`
 
-This test checks whether one bank account can safely handle simultaneous payments for two different students.
+Checks whether one bank account can safely handle simultaneous payments for two different students.
 
-**Test scenario:**
-
-- Initial account balance: `25,000,000 VND`.
-- Student `524H0001`: `18,500,000 VND`.
-- Student `524H0002`: `16,500,000 VND`.
-- Both payment confirmations are sent concurrently.
-
-**Expected result:**
+Expected result:
 
 - One confirmation succeeds with HTTP `200`.
 - The other is rejected with HTTP `409`.
@@ -435,88 +446,23 @@ This test checks whether one bank account can safely handle simultaneous payment
 - The account balance does not become negative.
 - Only one tuition bill becomes `PAID`.
 
-**Latest test result: PASSED**
-
-| Item | Result |
-|---|---|
-| Concurrent confirmation results | `[200, 409]` |
-| Successful debits | `1` |
-| Final account balance | `8,500,000 VND` |
-| `524H0001` | UNPAID |
-| `524H0002` | PAID |
-
-### 10.2 Two Payer - Same Student
+**2. Two Payer - Same Student**
 
 Test file:
 
-```text
-tests/payment_service/test_demo_two_payer_concurrency.py
-```
+`tests/payment_service/test_demo_two_payer_concurrency.py`
 
-Test function:
+Checks whether two different bank accounts can pay the same tuition bill at the same time.
 
-```text
-test_two_demo_accounts_concurrently_pay_the_same_tuition
-```
+Expected result:
 
-This test checks whether two different bank accounts can pay the same tuition bill at the same time.
-
-**Default test scenario:**
-
-| Setting | Value |
-|---|---|
-| First user | `user01` |
-| Second user | `user04` |
-| Student ID | `524H0004` |
-| Required initial tuition status | `UNPAID` |
-
-**Expected result:**
-
-- One payment returns HTTP `200`.
-- The other payment returns HTTP `409`.
-- One transaction becomes `SUCCESS`.
-- The other transaction becomes `FAILED`.
+- One payment succeeds with HTTP `200`.
+- The other is rejected with HTTP `409`.
+- Only one transaction becomes `SUCCESS`.
 - Only one account is debited.
-- The tuition bill becomes `PAID`.
+- The tuition bill is paid only once.
 
-**Latest test result: PASSED**
-
-| Account | Initial Balance | Final Balance | Result |
-|---|---:|---:|---|
-| `6202000008` | 35,000,000 | 35,000,000 | FAILED |
-| `6202000004` | 30,000,000 | 12,500,000 | SUCCESS |
-
-The tuition bill for `524H0004` was paid only once.
-
-### 10.3 Run Concurrency Tests from the Setup Menu
-
-The recommended way to run these tests:
-
-1. Open PowerShell in the project root.
-2. Activate the test environment if it is not already active.
-3. Run:
-
-```powershell
-.\setup-menu.ps1
-```
-
-4. Choose option `5`.
-5. Select:
-   - `1`: Same Account - Two Students.
-   - `2`: Two Payer - Same Student.
-   - `3`: Run Both Tests.
-6. Confirm the warning when prompted.
-
-### Important Warning
-
-Concurrency tests use the local demo database. They can:
-
-- Create payment transactions.
-- Debit bank accounts.
-- Change tuition statuses to `PAID`.
-- Add records to payment and account debit history.
-
-**Check the current demo data before running tests.** Do not run them repeatedly without resetting or preparing suitable test data.
+**Warning:** Check the current demo data before running these tests. Do not repeatedly run them without preparing suitable test data.
 
 ---
 

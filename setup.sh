@@ -192,9 +192,112 @@ show_email_menu() {
   done
 }
 
+prepare_test_environment() {
+  local test_script="$ROOT_DIR/setup-tests.sh"
+  if [[ ! -f "$test_script" ]]; then
+    printf 'setup-tests.sh is missing.\n' >&2
+    return 1
+  fi
+  bash "$test_script" prepare
+  printf '\nPress Enter to return to the Tests menu.'
+  IFS= read -r _ || true
+}
+
+run_automated_tests() {
+  local test_script="$ROOT_DIR/setup-tests.sh"
+  if [[ ! -f "$test_script" ]]; then
+    printf 'setup-tests.sh is missing.\n' >&2
+  elif [[ ! -x "$ROOT_DIR/.venv-ibanking-tests/bin/python" ]]; then
+    printf 'Test environment is not prepared. Choose [1] first.\n'
+  else
+    bash "$test_script" run || printf 'Automated tests failed. Review the output above.\n'
+  fi
+  printf '\nPress Enter to return to the Tests menu.'
+  IFS= read -r _ || true
+}
+
+run_concurrency_test() {
+  local test_path="$1" approval previous_approval had_previous=0 exit_code=0
+  local python_path="$ROOT_DIR/.venv-ibanking-tests/bin/python"
+  printf '\n'
+  if [[ ! -x "$python_path" ]]; then
+    printf 'Test environment is not prepared. Choose [1] Prepare test environment first.\n'
+    printf 'Press Enter to return to the Concurrency menu.'
+    IFS= read -r _ || true
+    return 0
+  fi
+  if [[ ! -f "$ROOT_DIR/$test_path" ]]; then
+    printf 'Concurrency test file is missing: %s\n' "$test_path" >&2
+    return 1
+  fi
+  printf 'WARNING: This test may modify the demo database.\n'
+  printf 'It can create transactions, debit demo accounts, and mark tuition as PAID.\n'
+  read -r -p 'Continue? (Y/N): ' approval || return 0
+  case "$approval" in
+      Y|y|YES|Yes|yes)
+          ;;
+      *)
+          echo "Test cancelled."
+          return
+          ;;
+  esac
+  if [[ ${IBANKING_DEMO_CONCURRENCY_APPROVAL+x} ]]; then
+    had_previous=1
+    previous_approval="$IBANKING_DEMO_CONCURRENCY_APPROVAL"
+  fi
+  export IBANKING_DEMO_CONCURRENCY_APPROVAL=YES
+  printf '\nRunning: %s\n----------------------------------------\n' "$test_path"
+  "$python_path" -m pytest "$ROOT_DIR/$test_path" -m demo_live -v -s || exit_code=$?
+  if (( had_previous )); then
+    export IBANKING_DEMO_CONCURRENCY_APPROVAL="$previous_approval"
+  else
+    unset IBANKING_DEMO_CONCURRENCY_APPROVAL
+  fi
+  if (( exit_code == 0 )); then
+    printf '\nTest completed successfully.\n'
+  else
+    printf '\nTest finished with exit code %s.\n' "$exit_code"
+  fi
+  printf 'Press Enter to return to the Concurrency menu.'
+  IFS= read -r _ || true
+}
+
+show_concurrency_menu() {
+  local choice
+  while true; do
+    printf '\n========================================\n Concurrency Testing\n========================================\n[1] Same Account - Two Students\n[2] Two Payer - Same Student\n[3] Run Both Tests\n[0] Back to Tests Menu\n'
+    read -r -p 'Choose an option: ' choice || return 0
+    case "$choice" in
+      1) run_concurrency_test 'tests/payment_service/test_payment_concurrency_same_account.py' ;;
+      2) run_concurrency_test 'tests/payment_service/test_demo_two_payer_concurrency.py' ;;
+      3)
+        run_concurrency_test 'tests/payment_service/test_payment_concurrency_same_account.py'
+        run_concurrency_test 'tests/payment_service/test_demo_two_payer_concurrency.py'
+        ;;
+      0) return 0 ;;
+      *) printf 'Please enter 1, 2, 3, or 0.\n' ;;
+    esac
+  done
+}
+
+show_tests_menu() {
+  local choice
+  while true; do
+    printf '\n========================================\n Tests\n========================================\n[1] Prepare test environment\n[2] Run automated tests\n[3] Run concurrency tests\n[0] Back to Main Menu\n'
+    read -r -p 'Choose an option: ' choice || return 0
+    case "$choice" in
+      1) prepare_test_environment ;;
+      2) run_automated_tests ;;
+      3) show_concurrency_menu ;;
+      0) return 0 ;;
+      *) printf 'Please enter 1, 2, 3, or 0.\n' ;;
+    esac
+  done
+}
+
 if [[ -t 0 && -t 1 ]]; then
   while true; do
-    printf '\n[1] View current demo data\n[2] Open iBanking frontend\n[3] Open Mailpit inbox\n[4] Configure email delivery\n[0] Exit setup (keep services running)\n'
+    printf '\n[1] View current demo data\n[2] Open iBanking frontend\n[3] Open Mailpit inbox\n[4] Configure email delivery\n[5] Tests\n[0] Exit setup (keep services running)\n'
     printf 'Choose an option: '
     IFS= read -r choice || exit 0
     case "$choice" in
@@ -202,8 +305,9 @@ if [[ -t 0 && -t 1 ]]; then
       2) open_url "$FRONTEND_URL" ;;
       3) open_url "$MAILPIT_URL" ;;
       4) show_email_menu ;;
+      5) show_tests_menu ;;
       0) break ;;
-      *) printf 'Please enter 1, 2, 3, 4, or 0.\n' ;;
+      *) printf 'Please enter 1, 2, 3, 4, 5, or 0.\n' ;;
     esac
   done
 fi

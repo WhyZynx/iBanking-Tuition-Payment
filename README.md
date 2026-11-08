@@ -40,6 +40,8 @@ The system allows users to:
 ### Architecture Overview
 
 ```text
+                           User
+                            |
                          Browser
                             |
                           Nginx
@@ -49,9 +51,9 @@ The system allows users to:
      User Service     Tuition Service   Payment Service
           |                 |                 |
    Account Database   Tuition Database   Payment Database
-                            |
-                       Email Delivery
-                       Mailpit / Gmail
+                                              |
+                                         Email Delivery
+                                         Mailpit / Gmail
 ```
 
 ### Main Services

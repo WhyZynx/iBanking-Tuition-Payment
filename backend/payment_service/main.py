@@ -14,7 +14,6 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# ÄÄƒng kĂ½ Bá»“i bĂ n Payment vĂ o há»‡ thá»‘ng
 app.include_router(paymentController.router)
 
 @app.get("/health")

@@ -1,3 +1,4 @@
+from sqlalchemy import text
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -214,3 +215,18 @@ def get_transaction_history(
                 else None
             )
     return {"items": items}
+
+@router.get("/api/v1/payments/student/{student_id}/payer")
+def get_student_payer(
+    student_id: str, 
+    db_session: Session = Depends(get_db)
+):
+    query = text("""
+        SELECT payer_user_id FROM transactions 
+        WHERE student_id = :student_id AND status = 'SUCCESS' 
+        ORDER BY completed_at DESC LIMIT 1
+    """)
+    result = db_session.execute(query, {"student_id": student_id}).fetchone()
+    if not result:
+        raise HTTPException(status_code=404, detail="No successful payment found")
+    return {"payer_user_id": result[0]}

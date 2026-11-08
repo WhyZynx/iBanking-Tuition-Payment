@@ -228,11 +228,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 		const statusElement = document.getElementById('result-tuition-status');
 		statusElement.textContent = currentStatus;
 		statusElement.className = `tuition-status ${currentStatus === 'PAID' ? 'paid' : currentStatus === 'UNPAID' ? '' : 'unknown'}`;
+
 		tuitionResult.classList.remove('hidden');
+		const payerContainer = document.getElementById('result-payer-container');
+		const payerNameEl = document.getElementById('result-payer-name');
+
 		if (currentStatus === 'PAID') {
 			lookupMessage.textContent = 'This tuition has already been paid.';
+			payerContainer.classList.remove('hidden');
+			payerNameEl.textContent = 'Loading...';
+
+			window.IBanking.paymentRequest(`/api/v1/payments/student/${tuition.student_id}/payer`)
+				.then(paymentData => window.IBanking.apiRequest(`/api/v1/users/${paymentData.payer_user_id}/name`))
+				.then(userData => { payerNameEl.textContent = `${userData.fullName} (${userData.phone || 'N/A'})`; })
+				.catch(() => { payerNameEl.textContent = 'Unknown'; });
 			return;
 		}
+
+		payerContainer.classList.add('hidden');
 		if (currentStatus !== 'UNPAID') {
 			lookupMessage.textContent = 'This tuition record has an unsupported payment status.';
 			return;
@@ -533,19 +546,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 	function renderSuccess(result) {
 		const completed = result.completed_at ? new Date(result.completed_at) : null;
-		document.getElementById('success-transaction-id').textContent = result.transaction_id || pendingPayment.transactionId;
-		document.getElementById('success-student').textContent = `${result.student_name || pendingPayment.studentName} (${result.student_id || pendingPayment.studentId})`;
-		document.getElementById('success-amount').textContent = formatCurrency(result.amount);
-		document.getElementById('success-account').textContent = pendingPayment.accountNumber;
 		document.getElementById('success-status').textContent = result.status;
+		document.getElementById('success-payer').textContent = `${currentUser.fullName || currentUser.username} (${currentUser.phone || 'N/A'})`;
+		document.getElementById('success-account').textContent = pendingPayment.accountNumber;
 		document.getElementById('success-completed-at').textContent = completed && !Number.isNaN(completed.getTime()) ? new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(completed) : '-';
 		otpSection.classList.add('hidden');
 		paymentSuccess.classList.remove('hidden');
+
 		if (selectedTuition) {
 			selectedTuition.status = 'PAID';
 			const tuitionStatus = document.getElementById('result-tuition-status');
 			tuitionStatus.textContent = 'PAID';
 			tuitionStatus.className = 'tuition-status paid';
+
+			const payerContainer = document.getElementById('result-payer-container');
+			const payerNameEl = document.getElementById('result-payer-name');
+			if (payerContainer && payerNameEl) {
+				payerContainer.classList.remove('hidden');
+				payerNameEl.textContent = `${currentUser.fullName || currentUser.username} (${currentUser.phone || 'N/A'})`;
+			}
 		}
 	}
 

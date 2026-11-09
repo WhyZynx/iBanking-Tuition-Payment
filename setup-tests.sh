@@ -35,8 +35,8 @@ prepare_environment() {
     if [[ ! -x "$UV_BIN" ]]; then
         echo "Installing uv locally..."
 
-        curl -LsSf https://astral.sh/uv/install.sh \
-            | env UV_INSTALL_DIR="$TOOLS_DIR" sh
+       curl -LsSf https://astral.sh/uv/install.sh \
+            | env UV_INSTALL_DIR="$TOOLS_DIR" INSTALLER_NO_MODIFY_PATH=1 sh
     fi
 
     if [[ ! -x "$UV_BIN" ]]; then
